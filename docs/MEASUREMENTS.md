@@ -194,9 +194,44 @@ measured gain on Linux for both lookups and writes.
 `results/2026-10-25-m4-pooled/raw.csv`. On macOS the pool is neutral: every
 cell is within 3% of the default allocator (unsync u64 10M: inserts 164.3 and
 164.4 ns, removes 231.2 and 226.5 ns; shared u64 10M lookups 98.7 and
-96.9 ns). The Linux run of the library allocator waits for the pod
-(`benchmarks/pod/diagnose_writes.sh`, builds `gcc_pooled` and
-`clang_pooled`).
+96.9 ns).
+
+### Pooled page allocator, pod, 2026-10-25
+
+`benchmarks/pod/diagnose_writes.sh` at da18ed3: GCC 13.3 and Clang 18.1, each
+with the default and the pooled allocator, `-march=native`, beside bbtree
+(rustc 1.99.1, `target-cpu=native`), interleaved, three repetitions, medians,
+`results/2026-10-25-pod-x86-pooled/raw.csv`. This run was disturbed: the
+default Clang build's unsync u64 10M lookups, unchanged since, ran at 1.85x
+bbtree's time against 1.14-1.25x in the earlier run
+(`results/2026-10-25-pod-x86-diagnosis/run3-ab`), so the ratios to bbtree are
+indicative only (the host's load average, 21-22 here and 55-75 then, is the
+whole 64-core host's and does not show it). The pooled and default builds ran
+interleaved under the same conditions, so their comparison is the firmer one. Clang, ratio to
+bbtree's time, default then pooled:
+
+| cell | default | pooled |
+|---|---|---|
+| unsync u64 1M insert_random | 1.40 | 1.02 |
+| unsync u64 1M remove_random | 1.12 | 1.00 |
+| unsync u64 1M insert_sequential | 1.07 | 1.32 |
+| unsync u64 1M get_hit | 1.49 | 1.58 |
+| unsync u64 10M insert_random | 1.42 | 1.28 |
+| unsync u64 10M remove_random | 1.37 | 1.21 |
+| unsync u64 10M insert_sequential | 1.10 | 0.69 |
+| unsync u64 10M get_hit | 1.85 | 1.70 |
+| unsync str16 1M insert_random | 1.17 | 1.04 |
+| unsync str16 1M remove_random | 1.14 | 0.91 |
+| shared u64 10M insert_random | 1.34 | 1.22 |
+| shared u64 10M remove_random | 1.51 | 1.40 |
+| shared str16 1M insert_sequential | 1.50 | 1.01 |
+
+GCC moves the same way (unsync u64 1M inserts 1.51 to 1.12; 10M removes 1.34
+to 1.29). On Linux the pool takes most of the write gap at 1M and about a
+third of it at 10M, and helps the 10M lookups; at 1M the sequential inserts
+and the u64 lookups were slower with it in this run. The lookup gap (1.5-2.1x
+here) is beyond what the allocator explains and was inflated in this run; a
+repeat on a quiet slice is needed before reading anything finer from it.
 
 ## Reproduce on the Mac mini
 

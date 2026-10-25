@@ -21,6 +21,8 @@ export PATH="$CARGO_HOME/bin:$PATH"
 echo "== toolchains"
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o rustup-init.sh
 sh rustup-init.sh -y --profile minimal --default-toolchain stable --no-modify-path
+# A restarted pod comes up with empty package lists.
+apt-get update -qq > "$out/apt-update.log" 2>&1
 mkdir -p "$job/clang-debs" "$job/clang"
 (cd "$job/clang-debs" && apt-get download clang-18 libclang-cpp18 libllvm18 libclang-common-18-dev llvm-18-linker-tools libclang1-18)
 for deb in "$job"/clang-debs/*.deb; do dpkg -x "$deb" "$job/clang"; done
