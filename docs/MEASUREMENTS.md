@@ -89,14 +89,30 @@ and 7.1 / 7.8; `str16` lookups at 10 threads 22.8 / 32.7 ns.
   map's batched inserts 7–21% behind; batched `url` lookups behind in both
   maps.
 
-## Compute pod run
+## Compute pod run, 2026-10-25: Linux x86-64, GCC 13.3
 
-A full matrix (three repetitions, thread counts 1, 2, 4) is packaged for the
-Fable compute pod (Linux x86-64, AMD EPYC 9575F slice, 4 vCPUs, GCC 13.3
-against stable Rust): `tools/prepare_pod_job.sh` assembles `.build/pod-job`
-and `benchmarks/pod/run.sh` builds both programs there (crates vendored,
-built offline) and runs `tools/run_benchmarks.py`. Its results will be added
-under `results/` with their environment.
+The full matrix (three repetitions, thread counts 1, 2, 4) on the Fable
+compute pod: AMD EPYC 9575F slice, 4 vCPUs, Ubuntu 24.04, GCC 13.3
+`-O3 -march=native` against stable Rust 1.99.1 (`target-cpu=native`, fat
+LTO), glibc malloc in both. `tools/prepare_pod_job.sh` assembles the job and
+`benchmarks/pod/run.sh` builds and runs it. The tree measured is commit
+901289c (the search code is unchanged since). Results, with the environment:
+`results/2026-10-25-pod-x86-gcc13/`.
+
+**On this host the C++ form is behind bbtree.** The geometric mean of
+Rust/C++ time over all 168 cells is 0.70 (range 0.36–1.35). Point lookups,
+misses and updates are worst, at 0.56–0.63 per workload; inserts and
+removals are at 0.70–0.81; scans and range reads are at parity (0.99–1.00).
+Some cells have a wide spread (the shared `u64` 1M lookups run from 69 to
+201 ns), because the pod's CPU slice is shared.
+
+The M4 numbers above (LLVM 23, NEON) were near parity on the same code, so
+the gap belongs to this toolchain and target, not to the design. It is not
+yet diagnosed. Candidates, in the order to check them: GCC's code for the
+vector-extension count (`detail/vector_count.hpp`) and for the forced-inline
+descent, compared with LLVM's on x86; the 16-byte lane groups against
+bbtree's explicit AVX-512 count on this Zen 5 core; and a Clang build on the
+same pod, which separates the compiler from the target.
 
 ## Reproduce on the Mac mini
 

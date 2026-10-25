@@ -1,0 +1,24 @@
+{
+  "recorded_at": "2026-10-25T04:50:09+0000",
+  "host": "4d06b5dbb1c6",
+  "machine": "x86_64",
+  "system": "Linux",
+  "cxx_compiler": "g++ (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0",
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "rust_flags": "-C target-cpu=native, codegen-units=1, lto=fat",
+  "thread_counts": [
+    1,
+    2,
+    4
+  ],
+  "upstream_commit": "8adae97a0ed97e5c98fa2790312eb0aec9719846",
+  "stx_btree_commit": "901289c8113e4cc6b003947f5c19067788e23f0d",
+  "cpu": "AMD EPYC 9575F 64-Core Processor",
+  "cpu_quota": "4",
+  "nproc": "4",
+  "memory_limit": "unavailable: Command '['sh', '-c', 'cat /sys/fs/cgroup/memory.max 2>/dev/null']' returned non-zero exit status 1.",
+  "os": "Ubuntu 24.04.3 LTS",
+  "kernel": "6.8.0-147-generic",
+  "cxx_flags": "-O3 -DNDEBUG -march=native (CMake Release)",
+  "allocator": "system allocator in both programs (glibc malloc)"
+}
