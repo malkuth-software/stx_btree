@@ -60,16 +60,28 @@ build_bench() {
     local name="$1" compiler="$2" flags="$3" link="$4"
     cmake -S . -B ".build/$name" -DCMAKE_BUILD_TYPE=Release "-DCMAKE_CXX_COMPILER=$compiler" "-DCMAKE_CXX_FLAGS=$flags" \
         "-DCMAKE_EXE_LINKER_FLAGS=$link" -DSTX_BTREE_WARNINGS_AS_ERRORS=OFF -DSTX_BTREE_BUILD_TESTS=OFF > /dev/null
-    cmake --build ".build/$name" --parallel 4 --target stx_btree_bench 2>&1 | tail -1
+    if ! cmake --build ".build/$name" --parallel 4 --target stx_btree_bench > "$out/build-$name.log" 2>&1; then
+        echo "$name: build failed (results/build-$name.log)"
+        grep -m 5 "error" "$out/build-$name.log" || true
+        return 0
+    fi
+    built="$built $name"
 }
+built=""
 build_bench gcc g++ "-march=native" ""
 build_bench gcc_v3 g++ "-march=x86-64-v3" ""
 build_bench gcc_generic g++ "-march=native -mtune=generic" ""
 build_bench clang "$clang" "-march=native" ""
 build_bench clang_libcxx "$clang" "-march=native $libcxx_flags" "$libcxx_link"
-for name in gcc gcc_v3 gcc_generic clang clang_libcxx; do
-    "./.build/$name/stx_btree_bench" unsync str16 1000 1000 > /dev/null || { echo "$name bench does not run"; exit 1; }
+runnable=""
+for name in $built; do
+    if "./.build/$name/stx_btree_bench" unsync str16 1000 1000 > /dev/null; then
+        runnable="$runnable $name"
+    else
+        echo "$name: bench does not run"
+    fi
 done
+echo "builds measured:$runnable" | tee -a "$out/toolchains.txt"
 (cd benchmarks/rust && RUSTFLAGS="-C target-cpu=native" CARGO_TARGET_DIR="$job/stx_btree/.build/rust-bench" \
     cargo build --release --offline --locked 2>&1 | tail -1)
 rust="$job/stx_btree/.build/rust-bench/release/bbtree-reference-bench"
@@ -81,7 +93,7 @@ raw="$out/raw.csv"
 echo "build,implementation,map,key,size,threads,workload,operations,ns_per_op,checksum,repetition" > "$raw"
 for cell in "unsync u64 10000000" "unsync str16 1000000" "shared u64 10000000"; do
     for repetition in 1 2 3; do
-        for build in gcc gcc_v3 gcc_generic clang clang_libcxx rust; do
+        for build in $runnable rust; do
             program="./.build/$build/stx_btree_bench"
             if [ "$build" = rust ]; then
                 program="$rust"
