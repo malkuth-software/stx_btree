@@ -1,0 +1,7 @@
+construct,knuth,24576,uniform,5.760,5.659,6.312,
+construct,monge_penalty,24576,uniform,5.002,4.989,5.802,height_bound=25;layers=16;fixed_point=1;largest_core=335888;witness_slots=100458363
+construct,monge_penalty_screened,24576,uniform,5.018,5.016,5.049,height_bound=25;layers=16;fixed_point=1;largest_core=335888;witness_slots=100458363
+construct,monge_additive,24576,uniform,4.934,4.919,5.008,height_bound=25;layers=16;fixed_point=1;largest_core=335888;witness_slots=100458363
+construct,monge_additive_screened,24576,uniform,5.053,5.028,5.117,height_bound=25;layers=16;fixed_point=1;largest_core=335888;witness_slots=100458363
+construct,weight_balanced,24576,uniform,0.000,0.000,0.000,cost_ratio=1.00000
+construct,packing,24576,uniform,0.002,0.002,0.002,

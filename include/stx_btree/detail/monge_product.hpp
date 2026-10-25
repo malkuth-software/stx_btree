@@ -363,8 +363,11 @@ public:
     // computed densely: constant size, linear in the compressed inner extent.
     static constexpr std::int64_t dense_leaf_cells = 64;
 
-    // C = A (min,+) B, C(i, j) = min over k of A(i, k) + B(k, j).
-    [[nodiscard]] static MongeProduct multiply(const CondensedMatrix& a, const CondensedMatrix& b) {
+    // C = A (min,+) B, C(i, j) = min over k of A(i, k) + B(k, j). With
+    // screen_roots, inner indices that cannot be the smallest minimizer of
+    // any entry are dropped first (screen_roots below); the witnesses still
+    // give the smallest minimizer, so the product is the same either way.
+    [[nodiscard]] static MongeProduct multiply(const CondensedMatrix& a, const CondensedMatrix& b, bool screen_roots) {
         assert(a.columns() == b.rows());
         const MatrixIndex inner_extent = a.columns();
 
@@ -408,9 +411,12 @@ public:
             }
             inner_kept.push_back(best_index);
         }
+        if (screen_roots && inner_kept.size() > 2) {
+            inner_kept = screen_inner(a, b, inner_kept);
+        }
         const CondensedMatrix compressed_a = a.select(row_cuts, inner_kept);
         const CondensedMatrix compressed_b = b.select(inner_kept, column_cuts);
-        assert(compressed_a.core_size() == a.core_size() && compressed_b.core_size() == b.core_size());
+        assert(compressed_a.core_size() <= a.core_size() && compressed_b.core_size() <= b.core_size());
 
         std::unique_ptr<ProductWitness> witness = std::make_unique<ProductWitness>();
         (*witness).row_group = CondensedMatrix::cut_groups(a.rows(), row_cuts);
@@ -423,7 +429,7 @@ public:
         if (compressed_cells <= dense_leaf_cells) {
             compressed_c = multiply_dense(compressed_a, compressed_b, *witness);
         } else {
-            compressed_c = multiply_split(compressed_a, compressed_b, *witness);
+            compressed_c = multiply_split(compressed_a, compressed_b, *witness, screen_roots);
         }
 
         // Expand the compressed product back: a kept row or column stands for
@@ -459,6 +465,57 @@ public:
     }
 
 private:
+    // Two-corner root screening (Codex Sydney, 2026-10-25; checked against
+    // the cubic recurrence and Knuth in tests/optimal_tree_test.cpp). With
+    // f_k(i, j) = A(i, k) + B(k, j), Monge makes f_k - f_l nondecreasing in i
+    // and j for k < l. So if a later root l has f_l(0, 0) < f_k(0, 0), root k
+    // loses everywhere; and if an earlier root l has
+    // f_l(p - 1, r - 1) <= f_k(p - 1, r - 1), l is no worse than k everywhere
+    // and wins ties. The roots kept are those in neither case: weak suffix
+    // minima of the top-left corner and strict prefix minima of the
+    // bottom-right. The smallest minimizer of every entry survives.
+    [[nodiscard]] static std::vector<MatrixIndex> screen_inner(
+        const CondensedMatrix& a, const CondensedMatrix& b, const std::vector<MatrixIndex>& roots) {
+        const std::vector<ExactCost> a_last_row = a.row_values(a.rows() - 1);
+        const std::vector<ExactCost> b_last_column = b.column_values(b.columns() - 1);
+        const std::size_t count = roots.size();
+        std::vector<bool> keep(count, true);
+        // Right to left: drop k when a later root is strictly cheaper at (0, 0).
+        ExactCost later_best = 0;
+        std::size_t index = count;
+        while (index > 0) {
+            index -= 1;
+            const std::size_t root = static_cast<std::size_t>(roots[index]);
+            const ExactCost top_left = a.top[root] + b.left[root];
+            if (index + 1 < count && top_left > later_best) {
+                keep[index] = false;
+            }
+            if (index + 1 == count || top_left < later_best) {
+                later_best = top_left;
+            }
+        }
+        // Left to right: drop k when an earlier root is no dearer at (p-1, r-1).
+        ExactCost earlier_best = 0;
+        for (index = 0; index < count; index += 1) {
+            const std::size_t root = static_cast<std::size_t>(roots[index]);
+            const ExactCost bottom_right = a_last_row[root] + b_last_column[root];
+            if (index > 0 && bottom_right >= earlier_best) {
+                keep[index] = false;
+            }
+            if (index == 0 || bottom_right < earlier_best) {
+                earlier_best = bottom_right;
+            }
+        }
+        std::vector<MatrixIndex> kept;
+        for (index = 0; index < count; index += 1) {
+            if (keep[index]) {
+                kept.push_back(roots[index]);
+            }
+        }
+        assert(!kept.empty());
+        return kept;
+    }
+
     [[nodiscard]] static CondensedMatrix multiply_dense(
         const CondensedMatrix& a, const CondensedMatrix& b, ProductWitness& witness) {
         const std::size_t row_count = static_cast<std::size_t>(a.rows());
@@ -522,7 +579,7 @@ private:
     // Splits the inner axis where it halves the combined core, multiplies
     // the halves and keeps the cellwise minimum.
     [[nodiscard]] static CondensedMatrix multiply_split(
-        const CondensedMatrix& a, const CondensedMatrix& b, ProductWitness& witness) {
+        const CondensedMatrix& a, const CondensedMatrix& b, ProductWitness& witness, bool screen_roots) {
         const MatrixIndex inner_extent = a.columns();
         std::vector<MatrixIndex> inner_weight(static_cast<std::size_t>(inner_extent) - 1, 0);
         std::size_t index = 0;
@@ -553,8 +610,8 @@ private:
         const CondensedMatrix b_right = b.select(inner_right, all_columns);
         assert(a_left.core_size() + b_left.core_size() <= total / 2);
         assert(a_right.core_size() + b_right.core_size() <= total / 2);
-        MongeProduct left_product = multiply(a_left, b_left);
-        MongeProduct right_product = multiply(a_right, b_right);
+        MongeProduct left_product = multiply(a_left, b_left, screen_roots);
+        MongeProduct right_product = multiply(a_right, b_right, screen_roots);
         std::vector<MatrixIndex> border;
         CondensedMatrix minimum = merge_minimum(left_product.matrix, right_product.matrix, border);
         witness.border = std::move(border);

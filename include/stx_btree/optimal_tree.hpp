@@ -16,6 +16,14 @@
 //                    O(n^{3/2} log^{3/2}(n + 1)) time when the total mass is
 //                    O(n) (after its centering step, which this
 //                    implementation does not perform; see docs/OPTIMAL_TREES.md).
+//   monge_additive   The same layers from Codex Sydney's additive base
+//                    (LayerBase::additive, 2026-10-25): exact, every
+//                    layer's core at most 3 L W + n, suggesting
+//                    O(n log^3 n) time at W = O(n) through the core-sparse
+//                    product (a candidate bound under review, not proved
+//                    here). Either can screen inner roots by two output
+//                    corners in each product (MongeLayerOptions, Codex
+//                    Sydney); off by default, as it removed no roots here.
 //   weight_balanced  Each root splits its interval's mass as evenly as the
 //                    keys allow (Mehlhorn's bisection rule). O(n log n), not
 //                    exact: its cost is reported, not promised optimal.
@@ -35,9 +43,27 @@
 
 namespace stx_btree {
 
-enum class TreeConstruction : std::uint8_t { knuth, monge_layers, weight_balanced };
+enum class TreeConstruction : std::uint8_t { knuth, monge_layers, monge_additive, weight_balanced };
 
-// What a monge_layers construction did, for measurement.
+// Layer 0 of the Monge construction.
+//   terminal_penalty  A_0(i, j) = M (j - i), M = (H + 1) W + 1: the
+//                     manuscript as published.
+//   additive          A_0(i, j) = L S(i, j) + (j - i), S the sum of
+//                     p_r + q_r + q_{r+1} over the interval: Codex Sydney's
+//                     revision (2026-10-25), which keeps every layer's core
+//                     within 3 L W + n.
+enum class LayerBase : std::uint8_t { terminal_penalty, additive };
+
+struct MongeLayerOptions final {
+    LayerBase base = LayerBase::terminal_penalty;
+    // Two-corner screening in every product. Off by default: every product
+    // here spans the diagonal, where the completion P (i - j) makes the
+    // top-left corner rise and the bottom-right fall with the root, so every
+    // root survives and screening only adds work (measured, n <= 8192).
+    bool screen_roots = false;
+};
+
+// What a monge_layers or monge_additive construction did, for measurement.
 struct MongeLayerReport final {
     std::size_t height_bound = 0;        // H, the number of layers allowed
     std::size_t layers = 0;              // layers computed
@@ -54,7 +80,9 @@ public:
         case TreeConstruction::knuth:
             return knuth(weights);
         case TreeConstruction::monge_layers:
-            return monge_layers(weights, report);
+            return monge_layers(weights, MongeLayerOptions{.base = LayerBase::terminal_penalty, .screen_roots = false}, report);
+        case TreeConstruction::monge_additive:
+            return monge_layers(weights, MongeLayerOptions{.base = LayerBase::additive, .screen_roots = false}, report);
         case TreeConstruction::weight_balanced:
             return weight_balanced(weights);
         }
@@ -118,12 +146,19 @@ public:
         return tree;
     }
 
-    // ---- Terminal-penalty Monge layers ----------------------------------
+    // ---- Monge layers -----------------------------------------------------
+
+    // The manuscript's construction as published.
+    [[nodiscard]] static SearchTree monge_layers(const SearchWeights& weights, MongeLayerReport& report) {
+        return monge_layers(weights, MongeLayerOptions{}, report);
+    }
 
     // Throws std::invalid_argument when the total mass is too large for every
-    // intermediate value to fit ExactCost (the prototype's bound: mass at
-    // most (2^120 - 1) / (16 n^2 (H + 2) + 16)).
-    [[nodiscard]] static SearchTree monge_layers(const SearchWeights& weights, MongeLayerReport& report) {
+    // intermediate value to fit ExactCost. Terminal penalty: the prototype's
+    // bound, mass at most (2^120 - 1) / (16 n^2 (H + 2) + 16). Additive: every
+    // completed entry, at most (n + 1) P with P = 2 (3 L W + n) + 1, times 16.
+    [[nodiscard]] static SearchTree monge_layers(
+        const SearchWeights& weights, const MongeLayerOptions& options, MongeLayerReport& report) {
         using detail::CondensedMatrix;
         using detail::Density;
         using detail::MatrixIndex;
@@ -159,16 +194,7 @@ public:
 
         const ExactCost n_value = static_cast<ExactCost>(n);
         const ExactCost height_value = static_cast<ExactCost>(height);
-        const ExactCost domain_denominator = 16 * n_value * n_value * (height_value + 2) + 16;
-        const ExactCost domain_limit = ((static_cast<ExactCost>(1) << 120) - 1) / domain_denominator;
-        if (mass > domain_limit) {
-            throw std::invalid_argument("search weights too large for the exact layer construction");
-        }
-
-        // Terminal penalty M exceeds any tree within the height bound; the
-        // below-diagonal completion P keeps every layer Monge.
-        const ExactCost terminal = (height_value + 1) * mass + 1;
-        const ExactCost below_diagonal = 4 * n_value * terminal + 4 * mass + 1;
+        const ExactCost largest = (static_cast<ExactCost>(1) << 120) - 1;
         const std::vector<ExactCost> prefix = mass_prefix(weights);
         std::vector<ExactCost> single(key_count, 0);
         std::size_t key = 0;
@@ -177,17 +203,54 @@ public:
                           static_cast<ExactCost>(weights.gaps[key + 1]);
         }
 
-        // Layer 0: A_0(i, j) = M (j - i) above the diagonal, completed below.
-        std::vector<ExactCost> top_row(key_count + 1, 0);
+        // The base: A_0(0, j) for every j (its top row), A_0(i, i + 1) for
+        // every key, and the below-diagonal completion P, which exceeds
+        // twice every upper-triangle entry of every layer so that no
+        // invalid root wins and every layer stays Monge.
+        std::vector<ExactCost> base_top(key_count + 1, 0);
+        std::vector<ExactCost> base_single(key_count, 0);
+        ExactCost below_diagonal = 0;
+        if (options.base == LayerBase::terminal_penalty) {
+            const ExactCost domain_denominator = 16 * n_value * n_value * (height_value + 2) + 16;
+            if (mass > largest / domain_denominator) {
+                throw std::invalid_argument("search weights too large for the exact layer construction");
+            }
+            // Terminal penalty M exceeds any tree within the height bound.
+            const ExactCost terminal = (height_value + 1) * mass + 1;
+            below_diagonal = 4 * n_value * terminal + 4 * mass + 1;
+            for (key = 0; key <= key_count; key += 1) {
+                base_top[key] = terminal * static_cast<ExactCost>(key);
+            }
+            for (key = 0; key < key_count; key += 1) {
+                base_single[key] = terminal;
+            }
+        } else {
+            // U = 3 L W + n bounds every upper-triangle entry of every layer.
+            const ExactCost level_factor = static_cast<ExactCost>(key_bits);
+            const ExactCost entry_limit = largest / (16 * (n_value + 1));
+            if (mass > entry_limit / (8 * level_factor + 8)) {
+                throw std::invalid_argument("search weights too large for the exact layer construction");
+            }
+            const ExactCost upper = 3 * level_factor * mass + n_value;
+            below_diagonal = 2 * upper + 1;
+            for (key = 0; key < key_count; key += 1) {
+                base_single[key] = level_factor * single[key] + 1;
+                base_top[key + 1] = base_top[key] + base_single[key];
+            }
+        }
+
+        // Layer 0: the base above the diagonal, P (i - j) below it. Its only
+        // densities are on the diagonal, P + A_0(i, i + 1): the base is
+        // additive in the interval's ends.
+        std::vector<ExactCost> top_row = base_top;
         std::vector<ExactCost> left_column(key_count + 1, 0);
         std::vector<Density> densities;
         for (key = 0; key <= key_count; key += 1) {
-            top_row[key] = terminal * static_cast<ExactCost>(key);
             left_column[key] = below_diagonal * static_cast<ExactCost>(key);
         }
         for (key = 0; key < key_count; key += 1) {
             const MatrixIndex at = static_cast<MatrixIndex>(key);
-            densities.push_back(Density{.row = at, .column = at, .value = below_diagonal + terminal});
+            densities.push_back(Density{.row = at, .column = at, .value = below_diagonal + base_single[key]});
         }
         CondensedMatrix layer = CondensedMatrix::from_densities(std::move(top_row), std::move(left_column), densities);
         report.largest_core = static_cast<std::size_t>(layer.core_size());
@@ -201,7 +264,7 @@ public:
             // A_h(i, j) = W(i, j) + min over i <= r < j of A_{h-1}(i, r) + A_{h-1}(r + 1, j).
             const CondensedMatrix roots_left = layer.select(rows_all, columns_before_last);
             const CondensedMatrix roots_right = layer.select(rows_after_first, rows_all);
-            MongeProduct product = MongeMultiplier::multiply(roots_left, roots_right);
+            MongeProduct product = MongeMultiplier::multiply(roots_left, roots_right, options.screen_roots);
             densities.clear();
             std::size_t index = 0;
             for (index = 0; index < product.matrix.core.size(); index += 1) {
@@ -215,10 +278,11 @@ public:
                 const MatrixIndex at = static_cast<MatrixIndex>(key);
                 densities.push_back(Density{.row = at, .column = at, .value = below_diagonal + single[key]});
                 if (key + 1 < key_count) {
-                    ExactCost bridge = terminal;
-                    if (step > 1) {
-                        bridge = single[key] < single[key + 1] ? single[key] : single[key + 1];
-                    }
+                    // min(A_{h-1}(i, i + 1), A_{h-1}(i + 1, i + 2)): the
+                    // base's singletons at h = 1, the singleton masses after.
+                    const std::vector<ExactCost>& previous_single = step == 1 ? base_single : single;
+                    const ExactCost bridge = previous_single[key] < previous_single[key + 1] ? previous_single[key]
+                                                                                             : previous_single[key + 1];
                     const ExactCost band = bridge - static_cast<ExactCost>(weights.gaps[key + 1]);
                     assert(band >= 0);
                     if (band != 0) {

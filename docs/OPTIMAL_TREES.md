@@ -30,8 +30,9 @@ extension).
 
 | `TreeConstruction` | Exact | Time | Memory |
 | --- | --- | --- | --- |
-| `knuth` | yes | O(n²) | (n+1)(n+2)/2 cells of 20 B (670 MB at n = 8192) |
+| `knuth` | yes | O(n²) | (n+1)(n+2)/2 cells of 20 B (670 MB at n = 8192, 6 GB at 24 576) |
 | `monge_layers` | yes | proved O(n^{3/2} log^{3/2}(n+1)) at W = O(n) (manuscript) | witnesses: 26–73 M integers at n = 8192 |
+| `monge_additive` | yes | candidate O(n log³(n+1)) at W = O(n) (under review) | as `monge_layers` |
 | `weight_balanced` | no | O(n log n) | O(n) |
 
 `monge_layers` is the manuscript's terminal-penalty iteration: H layers
@@ -54,56 +55,74 @@ recurrence, 8 instances 600 ≤ n < 1200 against Knuth, and edge cases (empty,
 all-zero, near-2⁶⁴ weights). Each returned tree is checked to be a search
 tree whose own cost is the reported cost.
 
+### The additive base (Codex Sydney's revision)
+
+`monge_additive` (`LayerBase::additive`) replaces the penalty base
+A₀(i, j) = M(j − i) with A₀(i, j) = L·S(i, j) + (j − i), where
+S(i, j) = Σ_{r=i}^{j−1}(p_r + q_r + q_{r+1}) and L = ⌈log₂(n + 1)⌉. It is
+additive in the interval's ends, so its interior core is empty, and strictly
+above C(i, j) on every nonempty interval; the recurrence is unchanged. The
+note's argument: every layer satisfies C ≤ A_h ≤ 3L·W(i, j) + (j − i), so with
+U = 3LW + n the completion P = 2U + 1 suffices and every layer's density mass
+telescopes to at most U; with W = O(n) and H = O(log n) layers that suggests
+O(n log³ n) time through the core-sparse product. I checked the steps (the
+base bound, monotonicity, exactness at H and at a fixed point, the
+reconstruction argument, the telescoping) and found no flaw; the proof is
+Sydney's and still under review, so the bound is a candidate, not a claim.
+The implementation changes only the base row, the h = 1 band
+(min(A₀(i, i + 1), A₀(i + 1, i + 2)) − q_{i+1}) and P; the tests run it, and
+the penalty base, against enumeration, the cubic recurrence and Knuth.
+
+### Two-corner root screening (measured: no effect here)
+
+`MongeLayerOptions::screen_roots` drops, in every product, inner roots that
+cannot be the smallest minimizer of any entry: for k < l, Monge makes
+f_k − f_l nondecreasing (f_k(i, j) = A(i, k) + B(k, j)), so a root beaten by a
+later one at the top-left corner, or matched by an earlier one at the
+bottom-right corner, never wins (Codex Sydney). It is correct (tested, all
+configurations), but in this construction it removed no roots at all: every
+product spans the diagonal, where the completion P(i − j) makes the
+top-left corner rise and the bottom-right fall with the root, so every root
+is a record at both corners. It costs 1–8% and is off by default.
+
 ### Measured construction time (Apple M4, LLVM 23, median of 3)
 
-`results/2026-10-25-m4-optimal/construct.csv`. Weights: uniform (all p, q =
-1), zipf (p = 10⁶/(rank + 1) + 1 for a random rank, q = 1), random (p in
-1..1000, q in 0..999).
+`results/2026-10-25-m4-monge-revision/`. Weights: uniform (all p, q = 1),
+zipf (p = 10⁶/(rank + 1) + 1 for a random rank, q = 1), random (p in
+1..1000, q in 0..999). Seconds; cores are the largest layer's density count.
 
-| n | family | knuth s | monge_layers s | layers / H | largest core |
-| ---: | --- | ---: | ---: | ---: | ---: |
-| 1024 | uniform | 0.006 | 0.11 | 12 / 18 | 9 228 |
-| 4096 | uniform | 0.21 | 0.69 | 14 / 21 | 45 070 |
-| 8192 | uniform | 0.93 | 2.40 | 15 / 22 | 98 319 |
-| 1024 | zipf | 0.003 | 0.29 | 15 / 35 | 20 569 |
-| 4096 | zipf | 0.17 | 2.42 | 17 / 35 | 97 291 |
-| 8192 | zipf | 0.60 | 5.32 | 18 / 35 | 217 337 |
-| 1024 | random | 0.004 | 0.52 | 13 / 31 | 35 389 |
-| 4096 | random | 0.13 | 3.05 | 16 / 34 | 197 390 |
-| 8192 | random | 1.16 | 9.76 | 17 / 35 | 466 830 |
+| family | n | knuth | penalty base | additive base | core, penalty / additive | layers |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| uniform | 4096 | 0.070 | 0.651 | 0.652 | 45 070 / 45 070 | 14 |
+| uniform | 8192 | 0.341 | 1.620 | 1.627 | 98 319 / 98 319 | 15 |
+| uniform | 16 384 | 1.847 | 3.188 | 3.120 | 213 008 / 213 008 | 16 |
+| uniform | 24 576 | **5.760** | **5.002** | **4.934** | 335 888 / 335 888 | 16 |
+| zipf | 4096 | 0.086 | 1.330 | 1.238 | 97 291 / 74 988 | 17 |
+| zipf | 8192 | 0.371 | 3.341 | 3.031 | 217 337 / 167 832 | 18 |
+| zipf | 16 384 | 1.438 | 8.163 | 7.417 | 465 949 / 355 464 | 20 |
+| random | 4096 | 0.084 | 2.080 | 2.378 | 197 390 / 216 864 | 16 |
+| random | 8192 | 0.377 | 5.566 | 6.385 | 466 830 / 510 149 | 17 |
+| random | 16 384 | 1.711 | 14.798 | 17.037 | 1 083 065 / 1 183 448 | 18 |
 
-**Knuth is faster at every size measured.** Per doubling, Knuth grows about
-4–4.5× and the layers 2.2–3.2×; if those rates held, the layers would pass
-Knuth around n ≈ 35 000 for uniform weights and several hundred thousand for
-the random family, where Knuth's table needs 12 GB or more. That is an
-extrapolation, not a measurement. Every run reached a fixed point before H.
-The cores on these families grow near n log n (uniform: 9.0n, 11.0n, 12.0n),
-well under the manuscript's n^{3/2} worst case.
+**The layers beat Knuth at n = 24 576 for uniform weights**: 4.93 s (additive,
+range 4.92–5.01) and 5.00 s (penalty, 4.99–5.80) against Knuth's 5.76 s
+(5.66–6.31), three repetitions each. Knuth's time grows 5.4× from 8192 to
+16 384 and 3.1× from 16 384 to 24 576 as its table outgrows the caches; the
+layers grow about 2×. For zipf and random weights Knuth is still 5–9× faster at
+16 384. That is one host, one family crossing; a larger n is limited by the
+Mini's 16 GB (Knuth's table is 10.7 GB at 32 768).
+
+On the bases: identical cores and times for uniform weights; the additive base
+cuts zipf cores by about 23% and time by 7–9%; for the random family
+(W ≈ 1000n, where the 3LW bound says nothing) its cores are 9–10% larger and it
+is 13–15% slower. Every run reached a fixed point before H.
 
 A sampling profile at n = 16 384 (uniform) puts about 30% of the time in
 `CondensedMatrix::from_densities` (two counting sorts and the compressed-row
 rebuild of every intermediate matrix), about 35% in allocation, freeing and
 clearing, 9% in `select`, and about 5% in the staircase merge and dense
-leaves. The gap to Knuth at these sizes is the implementation's constant
-factor per density, not core size: densities already arrive sorted from
-`select` and nearly sorted from the merge, so the sorts and the per-call
-allocations are the next targets.
-
-### An additive base (evidence, not in the library)
-
-Codex Sydney proposed replacing the penalty base A₀(i, j) = M(j − i) with
-A₀(i, j) = L·Σ_{r=i}^{j−1}(p_r + q_r + q_{r+1}) + (j − i), L = ⌈log₂(n + 1)⌉:
-additive, so its interior core is empty, and strictly above C(i, j) on every
-nonempty interval. The density mass of every layer then telescopes to at
-most A_h(0, n) ≤ 3LW + n, which with W = O(n) and H = O(log n) layers
-suggests O(n log³ n) through the core-sparse product. A scratch
-implementation (only the base, the h = 1 band and the completion P =
-4·A₀(0, n) + 4W + 1 changed) agrees with Knuth on 2 928 instances, n ≤ 60, six
-families, with every Monge and reconstruction assertion on and under
-ASan/UBSan. At n = 8192 its cores equal the penalty base's for uniform
-weights, are 25% smaller for zipf (time −12%), and 10% larger for random
-weights with W ≈ 1000n, where the 3LW bound says nothing. The proof is being
-checked separately; the library keeps the manuscript's base.
+leaves: the remaining gap to Knuth below the crossover is the
+implementation's constant factor per density, not core size.
 
 ## Packing and layout
 
@@ -176,10 +195,11 @@ Reading them:
 ## Limits and next steps
 
 - Construction for the map at millions of keys uses `weight_balanced`; the
-  exact constructions are practical to about 10⁴ keys (Knuth by memory, the
-  layers by time) today.
+  exact constructions are practical to a few times 10⁴ keys today (Knuth by
+  memory, the layers by time).
 - The packing is optimal for the given binary tree, not among multiway
   trees; an exact multiway construction (layers whose step splits an
   interval into up to K + 1 parts) is open.
-- The layer construction's constant factors (above), and the additive base,
-  are the route to beating Knuth in practice.
+- Below the crossover the layers lose to Knuth on constant factors: sorted
+  merges in place of the counting sorts, and reused buffers in place of
+  per-call allocation, are the next step.

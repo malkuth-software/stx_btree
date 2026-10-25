@@ -17,7 +17,8 @@
 //                      find_many
 // construction is knuth, monge_layers or weight_balanced, for the skewed map.
 //
-// construct: the three constructions and the packing on one weight family
+// construct: Knuth, the Monge layers in four configurations (penalty or
+// additive base, roots screened or not), weight-balanced and the packing on one weight family
 // (uniform, zipf, random) at the given size, seconds per build.
 //
 // One CSV line per measurement: mode, structure, keys, parameter, ns per
@@ -41,6 +42,8 @@
 namespace {
 
 using stx_btree::ExactCost;
+using stx_btree::LayerBase;
+using stx_btree::MongeLayerOptions;
 using stx_btree::MongeLayerReport;
 using stx_btree::OptimalMap;
 using stx_btree::OptimalMapPlan;
@@ -332,11 +335,19 @@ int run_construct(std::size_t key_count, const char* family, std::size_t repetit
             weights.gaps[index] = random.next() % 1000;
         }
     }
+    // The Monge configurations measured: base and root screening.
+    const MongeLayerOptions layer_options[4] = {
+        MongeLayerOptions{.base = LayerBase::terminal_penalty, .screen_roots = false},
+        MongeLayerOptions{.base = LayerBase::terminal_penalty, .screen_roots = true},
+        MongeLayerOptions{.base = LayerBase::additive, .screen_roots = false},
+        MongeLayerOptions{.base = LayerBase::additive, .screen_roots = true},
+    };
+    const char* const layer_names[4] = {"monge_penalty", "monge_penalty_screened", "monge_additive", "monge_additive_screened"};
     std::vector<double> knuth_seconds;
-    std::vector<double> monge_seconds;
+    std::vector<std::vector<double>> layer_seconds(4);
     std::vector<double> balanced_seconds;
     std::vector<double> packing_seconds;
-    MongeLayerReport report;
+    MongeLayerReport reports[4];
     ExactCost optimal = 0;
     ExactCost balanced_cost = 0;
     std::size_t repetition = 0;
@@ -344,9 +355,16 @@ int run_construct(std::size_t key_count, const char* family, std::size_t repetit
         Clock::time_point start = Clock::now();
         const SearchTree by_knuth = OptimalTreeBuilder::knuth(weights);
         knuth_seconds.push_back(seconds_since(start));
-        start = Clock::now();
-        const SearchTree by_layers = OptimalTreeBuilder::monge_layers(weights, report);
-        monge_seconds.push_back(seconds_since(start));
+        std::size_t option = 0;
+        for (option = 0; option < 4; option += 1) {
+            start = Clock::now();
+            const SearchTree by_layers = OptimalTreeBuilder::monge_layers(weights, layer_options[option], reports[option]);
+            layer_seconds[option].push_back(seconds_since(start));
+            if (by_knuth.cost != by_layers.cost) {
+                std::fprintf(stderr, "knuth and %s disagree\n", layer_names[option]);
+                return 1;
+            }
+        }
         start = Clock::now();
         const SearchTree balanced = OptimalTreeBuilder::weight_balanced(weights);
         balanced_seconds.push_back(seconds_since(start));
@@ -354,24 +372,24 @@ int run_construct(std::size_t key_count, const char* family, std::size_t repetit
         const stx_btree::detail::PackedTree packed =
             stx_btree::detail::TreePacker::pack(by_knuth.shape, weights, Map::node_capacity);
         packing_seconds.push_back(seconds_since(start));
-        if (by_knuth.cost != by_layers.cost) {
-            std::fprintf(stderr, "knuth and monge_layers disagree\n");
-            return 1;
-        }
         optimal = by_knuth.cost;
         balanced_cost = balanced.cost;
         (void)packed;
     }
     const std::string parameter(family);
-    char extra[192];
-    std::snprintf(extra, sizeof(extra), "height_bound=%zu;layers=%zu;fixed_point=%d;largest_core=%zu;witness_slots=%zu",
-                  report.height_bound, report.layers, report.reached_fixed_point ? 1 : 0, report.largest_core,
-                  report.witness_slots);
     char ratio[64];
     std::snprintf(ratio, sizeof(ratio), "cost_ratio=%.5f", static_cast<double>(balanced_cost) / static_cast<double>(optimal));
     // Seconds, not nanoseconds, for construction lines.
     print_line("construct", "knuth", key_count, parameter, summarize(knuth_seconds), "");
-    print_line("construct", "monge_layers", key_count, parameter, summarize(monge_seconds), std::string(extra));
+    std::size_t option = 0;
+    for (option = 0; option < 4; option += 1) {
+        const MongeLayerReport& report = reports[option];
+        char extra[192];
+        std::snprintf(extra, sizeof(extra), "height_bound=%zu;layers=%zu;fixed_point=%d;largest_core=%zu;witness_slots=%zu",
+                      report.height_bound, report.layers, report.reached_fixed_point ? 1 : 0, report.largest_core,
+                      report.witness_slots);
+        print_line("construct", layer_names[option], key_count, parameter, summarize(layer_seconds[option]), std::string(extra));
+    }
     print_line("construct", "weight_balanced", key_count, parameter, summarize(balanced_seconds), std::string(ratio));
     print_line("construct", "packing", key_count, parameter, summarize(packing_seconds), "");
     return 0;

@@ -25,6 +25,8 @@ First C++ form of bbtree 0.1.5 (upstream commit 8adae97).
   `find` and `find_many`; `optimal_map_bench`.
 - Measurements on the Linux x86-64 compute pod (GCC 13.3), where the C++ form
   is behind bbtree.
+- `TreeConstruction::monge_additive` (Codex Sydney's additive base) and
+  `MongeLayerOptions` (base, two-corner root screening).
 - `PooledPageAllocator` (`pooled_page_allocator.hpp`) for both maps, and the
   `stx_btree_bench_pooled` build of the bench.
 - Not a stable ABI or memory format.

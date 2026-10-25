@@ -95,4 +95,8 @@ O(n^2) construction, Mehlhorn's bisection rule, the Gil–Itai packing and the
 count layout are standard; the map's node search reuses this repository's
 bbtree-derived inline keys, lane-group count and prefetch. Written by Claude
 Code (Claude Opus 5.5) under the owner's direction.
+The additive layer base (`LayerBase::additive`, `monge_additive`) and the
+two-corner root screening (`MongeLayerOptions::screen_roots`) implement
+research notes by Codex Sydney (2026-10-25), shared in this project's
+session; their proofs are Sydney's and under review.
 [docs/OPTIMAL_TREES.md](docs/OPTIMAL_TREES.md) has the design and measurements.
