@@ -2,7 +2,8 @@
 # Callgrind (instruction counts and simulated cache misses, inclusive per
 # function) of the Clang-built C++ bench and the Rust bench on one cell, for
 # the write-gap diagnosis: deterministic, so the shared host's load does not
-# enter. Submitted by tools/prepare_pod_job.sh with this script as run.sh.
+# enter. Both are built for x86-64-v3 (AVX2): valgrind 3.22 cannot run
+# AVX-512 code, so counts here are for that target. Submitted by tools/prepare_pod_job.sh with this script as run.sh.
 set -euo pipefail
 job="$(pwd)"
 out="$job/results"
@@ -22,10 +23,10 @@ for deb in "$job"/clang-debs/*.deb; do dpkg -x "$deb" "$job/clang"; done
 export LD_LIBRARY_PATH="$job/clang/usr/lib/x86_64-linux-gnu:$job/clang/usr/lib/llvm-18/lib"
 clang="$job/clang/usr/lib/llvm-18/bin/clang++"
 cd "$job/stx_btree"
-cmake -S . -B .build/clang -DCMAKE_BUILD_TYPE=RelWithDebInfo "-DCMAKE_CXX_COMPILER=$clang" "-DCMAKE_CXX_FLAGS=-march=native -O3 -DNDEBUG" \
+cmake -S . -B .build/clang -DCMAKE_BUILD_TYPE=RelWithDebInfo "-DCMAKE_CXX_COMPILER=$clang" "-DCMAKE_CXX_FLAGS=-march=x86-64-v3 -O3 -DNDEBUG" \
     -DSTX_BTREE_WARNINGS_AS_ERRORS=OFF -DSTX_BTREE_BUILD_TESTS=OFF > /dev/null
 cmake --build .build/clang --parallel 4 --target stx_btree_bench > "$out/build-clang.log" 2>&1
-(cd benchmarks/rust && RUSTFLAGS="-C target-cpu=native" CARGO_TARGET_DIR="$job/stx_btree/.build/rust-bench" \
+(cd benchmarks/rust && RUSTFLAGS="-C target-cpu=x86-64-v3" CARGO_TARGET_DIR="$job/stx_btree/.build/rust-bench" \
     cargo build --release --offline --locked 2>&1 | tail -1)
 rust="$job/stx_btree/.build/rust-bench/release/bbtree-reference-bench"
 unset LD_LIBRARY_PATH
