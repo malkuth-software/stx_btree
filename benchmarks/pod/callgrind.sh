@@ -30,12 +30,35 @@ cmake --build .build/clang --parallel 4 --target stx_btree_bench > "$out/build-c
     cargo build --release --offline --locked 2>&1 | tail -1)
 rust="$job/stx_btree/.build/rust-bench/release/bbtree-reference-bench"
 unset LD_LIBRARY_PATH
+
+# Hardware counters, if the kernel allows them: perf from linux-tools with
+# the libraries it lacks on this image, unpacked here.
+mkdir -p "$job/perf"
+kernel="$(uname -r)"
+(cd "$job/perf" && apt-get download "linux-tools-${kernel%-generic}" "linux-tools-$kernel" libtraceevent1 libtracefs1 libbabeltrace1 libopencsd1 libpfm4 libdw1t64 libunwind8 libslang2 > "$out/perf-download.log" 2>&1) || true
+for deb in "$job"/perf/*.deb; do dpkg -x "$deb" "$job/perf/root" || true; done
+perf="$(find "$job/perf/root" -type f -name perf | head -1)"
+perf_libraries="$job/perf/root/usr/lib/x86_64-linux-gnu:$job/perf/root/lib/x86_64-linux-gnu"
+if [ -n "$perf" ] && LD_LIBRARY_PATH="$perf_libraries" "$perf" stat -e cycles,instructions true > "$out/perf-probe.log" 2>&1; then
+    for build in cpp rust; do
+        program=./.build/clang/stx_btree_bench
+        if [ "$build" = rust ]; then
+            program="$rust"
+        fi
+        LD_LIBRARY_PATH="$perf_libraries" "$perf" stat -e cycles,instructions,branch-misses,cache-misses,dTLB-load-misses,dTLB-store-misses \
+            -o "$out/perf-stat-$build.txt" "$program" unsync u64 1000000 1000000 > /dev/null 2>&1 || true
+    done
+else
+    { echo "perf unavailable"; LD_LIBRARY_PATH="$perf_libraries" ldd "$perf" 2>&1 | grep "not found"; } >> "$out/perf-probe.log" 2>&1 || true
+fi
+rm -rf "$job/perf"
+
 for build in cpp rust; do
     program=./.build/clang/stx_btree_bench
     if [ "$build" = rust ]; then
         program="$rust"
     fi
-    valgrind --tool=callgrind --cache-sim=yes --callgrind-out-file="$out/callgrind.$build.out" \
+    valgrind --tool=callgrind --cache-sim=yes --branch-sim=yes --callgrind-out-file="$out/callgrind.$build.out" \
         "$program" unsync u64 1000000 200000 > "$out/run-$build.csv" 2> "$out/valgrind-$build.log"
     callgrind_annotate --inclusive=yes "$out/callgrind.$build.out" > "$out/inclusive-$build.txt" 2>&1 || true
     callgrind_annotate "$out/callgrind.$build.out" > "$out/self-$build.txt" 2>&1 || true
