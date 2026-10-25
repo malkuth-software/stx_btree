@@ -23,7 +23,8 @@ echo "== toolchains"
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o rustup-init.sh
 sh rustup-init.sh -y --profile minimal --default-toolchain stable --no-modify-path
 mkdir -p "$job/clang-debs" "$job/clang"
-(cd "$job/clang-debs" && apt-get download clang-18 libclang-cpp18 libllvm18 libclang-common-18-dev llvm-18-linker-tools libclang1-18)
+(cd "$job/clang-debs" && apt-get download clang-18 libclang-cpp18 libllvm18 libclang-common-18-dev llvm-18-linker-tools libclang1-18 \
+    libc++-18-dev libc++1-18 libc++abi-18-dev libc++abi1-18 libunwind-18 libunwind-18-dev)
 for deb in "$job"/clang-debs/*.deb; do dpkg -x "$deb" "$job/clang"; done
 export LD_LIBRARY_PATH="$job/clang/usr/lib/x86_64-linux-gnu:$job/clang/usr/lib/llvm-18/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 clang="$job/clang/usr/lib/llvm-18/bin/clang++"
@@ -48,16 +49,27 @@ echo "== count kernel assembly"
 for compiler in g++ "$clang"; do
     name="$(basename "$compiler" | tr -d '+')"
     "$compiler" -std=c++20 -O3 -DNDEBUG -march=native -Iinclude -S -o "$out/count_probe.$name.s" benchmarks/pod/count_probe.cpp
+    "$compiler" -std=c++20 -O3 -DNDEBUG -march=native -Iinclude -S -o "$out/find_probe.$name.s" benchmarks/pod/find_probe.cpp
 done
+libcxx_flags="-stdlib=libc++ -nostdinc++ -isystem $job/clang/usr/lib/llvm-18/include/c++/v1 -isystem $job/clang/usr/include/c++/v1"
+libcxx_link="-stdlib=libc++ -L$job/clang/usr/lib/llvm-18/lib -L$job/clang/usr/lib/x86_64-linux-gnu -Wl,-rpath,$job/clang/usr/lib/llvm-18/lib"
 
 echo "== stx_btree benches"
-cmake -S . -B .build/gcc -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++ "-DCMAKE_CXX_FLAGS=-march=native" \
-    -DSTX_BTREE_WARNINGS_AS_ERRORS=OFF -DSTX_BTREE_BUILD_TESTS=OFF > /dev/null
-cmake --build .build/gcc --parallel 4 --target stx_btree_bench 2>&1 | tail -2
-cmake -S . -B .build/clang -DCMAKE_BUILD_TYPE=Release "-DCMAKE_CXX_COMPILER=$clang" "-DCMAKE_CXX_FLAGS=-march=native" \
-    -DSTX_BTREE_WARNINGS_AS_ERRORS=OFF > /dev/null
-cmake --build .build/clang --parallel 4 2>&1 | tee "$out/clang-build.log" | tail -2
-ctest --test-dir .build/clang --output-on-failure -E stress | tail -3
+# One bench per build: compiler, flags, standard library.
+build_bench() {
+    local name="$1" compiler="$2" flags="$3" link="$4"
+    cmake -S . -B ".build/$name" -DCMAKE_BUILD_TYPE=Release "-DCMAKE_CXX_COMPILER=$compiler" "-DCMAKE_CXX_FLAGS=$flags" \
+        "-DCMAKE_EXE_LINKER_FLAGS=$link" -DSTX_BTREE_WARNINGS_AS_ERRORS=OFF -DSTX_BTREE_BUILD_TESTS=OFF > /dev/null
+    cmake --build ".build/$name" --parallel 4 --target stx_btree_bench 2>&1 | tail -1
+}
+build_bench gcc g++ "-march=native" ""
+build_bench gcc_v3 g++ "-march=x86-64-v3" ""
+build_bench gcc_generic g++ "-march=native -mtune=generic" ""
+build_bench clang "$clang" "-march=native" ""
+build_bench clang_libcxx "$clang" "-march=native $libcxx_flags" "$libcxx_link"
+for name in gcc gcc_v3 gcc_generic clang clang_libcxx; do
+    "./.build/$name/stx_btree_bench" unsync str16 1000 1000 > /dev/null || { echo "$name bench does not run"; exit 1; }
+done
 (cd benchmarks/rust && RUSTFLAGS="-C target-cpu=native" CARGO_TARGET_DIR="$job/stx_btree/.build/rust-bench" \
     cargo build --release --offline --locked 2>&1 | tail -1)
 rust="$job/stx_btree/.build/rust-bench/release/bbtree-reference-bench"
@@ -67,14 +79,13 @@ echo "== interleaved cells"
 # host falls on all three alike.
 raw="$out/raw.csv"
 echo "build,implementation,map,key,size,threads,workload,operations,ns_per_op,checksum,repetition" > "$raw"
-for cell in "unsync u64 1000000" "unsync u64 10000000" "shared u64 10000000" "unsync str16 1000000" "shared str16 10000000"; do
-    for repetition in 1 2 3 4 5; do
-        for build in gcc clang rust; do
-            case "$build" in
-                gcc) program=.build/gcc/stx_btree_bench ;;
-                clang) program=.build/clang/stx_btree_bench ;;
-                rust) program="$rust" ;;
-            esac
+for cell in "unsync u64 10000000" "unsync str16 1000000" "shared u64 10000000"; do
+    for repetition in 1 2 3; do
+        for build in gcc gcc_v3 gcc_generic clang clang_libcxx rust; do
+            program="./.build/$build/stx_btree_bench"
+            if [ "$build" = rust ]; then
+                program="$rust"
+            fi
             # shellcheck disable=SC2086
             "$program" $cell 1000000 | awk -v b="$build" -v r="$repetition" -F, 'NF == 9 { print b "," $0 "," r }' >> "$raw"
         done
