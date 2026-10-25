@@ -45,6 +45,7 @@ deliberate leak) and on Linux.
 | --- | --- | --- |
 | Apple M4, macOS 26.5 | Homebrew LLVM 23.1.2 (`/opt/homebrew/opt/llvm/bin/clang++`), `-mcpu=native` | release, sanitizer, relocated install |
 | Apple M4, macOS 26.5 | Homebrew GCC 15.2 (`g++-15`) | release |
+| Linux x86-64 (Ubuntu 24.04, AMD EPYC 9575F slice, compute pod) | GCC 13.3, `-march=native` | release (no warnings; tests in the benchmark job) |
 | macOS arm64 | Apple clang 21 | development builds of the tests |
 
 `tools/verify.sh` runs the first row on the owner's Mac mini (through
