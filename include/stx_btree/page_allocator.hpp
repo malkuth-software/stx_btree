@@ -25,8 +25,16 @@ public:
         return page;
     }
 
+    // The sized form only where the compiler declares it: Clang before 19
+    // leaves sized deallocation off by default (found building with Clang 18
+    // on Linux), and the unsized aligned form frees the same page.
     void deallocate_page(PageKind, void* page, std::size_t bytes, std::size_t alignment) const noexcept {
+#if defined(__cpp_sized_deallocation)
         ::operator delete(page, bytes, std::align_val_t(alignment));
+#else
+        (void)bytes;
+        ::operator delete(page, std::align_val_t(alignment));
+#endif
     }
 
     [[nodiscard]] bool operator==(const GlobalPageAllocator&) const noexcept {

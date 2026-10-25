@@ -9,6 +9,12 @@ set -euo pipefail
 job="$(pwd)"
 out="$job/results"
 mkdir -p "$out"
+# The toolchains and build trees go however the job ends: the pod's disk is
+# 5 GB, temporary and shared.
+remove_scratch() {
+    rm -rf "$job/toolchain" "$job/clang" "$job/clang-debs" "$job/stx_btree/.build" "$job/stx_btree/benchmarks/rust/vendor"
+}
+trap remove_scratch EXIT
 export RUSTUP_HOME="$job/toolchain/rustup"
 export CARGO_HOME="$job/toolchain/cargo"
 export PATH="$CARGO_HOME/bin:$PATH"
@@ -76,6 +82,4 @@ for cell in "unsync u64 1000000" "unsync u64 10000000" "shared u64 10000000" "un
 done
 cat /proc/loadavg >> "$out/toolchains.txt"
 
-echo "== cleanup"
-rm -rf "$job/toolchain" "$job/clang" "$job/clang-debs" .build
 echo "done"

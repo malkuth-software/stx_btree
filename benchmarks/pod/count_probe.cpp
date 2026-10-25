@@ -10,8 +10,6 @@
 using stx_btree::detail::EqualRange;
 using stx_btree::detail::InlineKeyCount;
 
-extern "C" {
-
 // u64 keys: two-byte windows, leaf 55 slots, internal 49.
 EqualRange probe_u16_leaf55(const std::uint16_t* slots, std::uint16_t target, std::size_t length) {
     return InlineKeyCount<std::uint16_t, 55>::equal_range(slots, target, length);
@@ -28,6 +26,4 @@ EqualRange probe_u32_internal41(const std::uint32_t* slots, std::uint32_t target
 
 EqualRange probe_u64_leaf24(const std::uint64_t* slots, std::uint64_t target, std::size_t length) {
     return InlineKeyCount<std::uint64_t, 24>::equal_range(slots, target, length);
-}
-
 }
