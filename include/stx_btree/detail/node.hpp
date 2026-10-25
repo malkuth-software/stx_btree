@@ -30,6 +30,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <new>
 #include <type_traits>
@@ -603,6 +604,12 @@ public:
     // here. The old head key and value move to the caller's storage.
     [[nodiscard]] Window take_head_for_successor(Key* key_out, Value* value_out) const noexcept {
         const std::size_t old_length = length();
+        // A leaf right of a separator keeps its minimum of keys (invariant
+        // 1, D22); an empty one is a broken tree, which stops here as
+        // bbtree's `expect` does rather than shift a wrapped count.
+        if (old_length == 0) {
+            std::abort();
+        }
         const Window successor = window(0);
         SlotRelocation<Key>::move_one(entry(0), reinterpret_cast<std::byte*>(key_out));
         SlotRelocation<Value>::move_one(entry(0) + Shape::leaf.value_offset, reinterpret_cast<std::byte*>(value_out));

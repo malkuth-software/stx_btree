@@ -205,15 +205,15 @@ public:
     }
 
 private:
-    // Trivially constructible: slots past the counts are not written until
-    // taken.
+    // Zeroed when made: a set of held nodes is made only for a change larger
+    // than a leaf, and zeroing lets compilers see every slot read is written.
     struct Taken final {
         std::byte* page;
         Version version;
     };
-    Taken internals[internal_capacity];
+    Taken internals[internal_capacity] = {};
     std::size_t internal_count = 0;
-    Taken leaves[leaf_capacity];
+    Taken leaves[leaf_capacity] = {};
     std::size_t leaf_count = 0;
 };
 

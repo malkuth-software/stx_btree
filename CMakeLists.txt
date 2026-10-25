@@ -7,6 +7,9 @@ option(STX_BTREE_BUILD_BENCHMARKS "Build the benchmark program" ${PROJECT_IS_TOP
 # The sanitizer tree beside the ordinary one (house style 5): ASan, UBSan and,
 # where the runtime has it, LSan; any report fails the run.
 option(STX_BTREE_SANITIZE "Build with AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
+# On by default; a build on an untried compiler (the benchmark pod's job)
+# turns it off and keeps the warnings in its log instead of stopping.
+option(STX_BTREE_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 
 # Header-only: the maps are templates over key, value and allocator.
 add_library(stx_btree INTERFACE)
@@ -18,7 +21,10 @@ target_include_directories(stx_btree INTERFACE
 find_package(Threads REQUIRED)
 target_link_libraries(stx_btree INTERFACE Threads::Threads)
 
-set(STX_BTREE_WARNINGS -Wall -Wextra -Wpedantic -Wshadow -Werror)
+set(STX_BTREE_WARNINGS -Wall -Wextra -Wpedantic -Wshadow)
+if(STX_BTREE_WARNINGS_AS_ERRORS)
+    list(APPEND STX_BTREE_WARNINGS -Werror)
+endif()
 set(STX_BTREE_SANITIZER_FLAGS
     -fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer)
 

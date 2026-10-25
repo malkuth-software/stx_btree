@@ -45,25 +45,47 @@ def sysctl(name):
     return command_output(["sysctl", "-n", name])
 
 
-def environment():
-    return {
+def first_line(text):
+    lines = text.splitlines()
+    return lines[0] if lines else text
+
+
+def environment(options):
+    record = {
         "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "host": platform.node(),
         "machine": platform.machine(),
-        "cpu": sysctl("machdep.cpu.brand_string"),
-        "performance_cores": sysctl("hw.perflevel0.physicalcpu"),
-        "efficiency_cores": sysctl("hw.perflevel1.physicalcpu"),
-        "memory_bytes": sysctl("hw.memsize"),
-        "l2_bytes_performance": sysctl("hw.perflevel0.l2cachesize"),
-        "os": command_output(["sw_vers", "-productVersion"]),
-        "cxx_compiler": command_output(["/opt/homebrew/opt/llvm/bin/clang++", "--version"]).splitlines()[0],
-        "cxx_flags": "-O3 -DNDEBUG -mcpu=native (CMake Release)",
-        "rustc": command_output([os.path.expanduser("~/.cargo/bin/rustc"), "--version"]),
+        "system": platform.system(),
+        "cxx_compiler": first_line(command_output([options.cxx, "--version"])),
+        "rustc": first_line(command_output([options.rustc, "--version"])),
         "rust_flags": "-C target-cpu=native, codegen-units=1, lto=fat",
-        "allocator": "system allocator in both programs (macOS libmalloc)",
+        "thread_counts": options.thread_counts,
         "upstream_commit": command_output(["cat", "benchmarks/rust/UPSTREAM_COMMIT"]),
         "stx_btree_commit": os.environ.get("STX_BTREE_COMMIT", "unrecorded"),
     }
+    if platform.system() == "Darwin":
+        record.update({
+            "cpu": sysctl("machdep.cpu.brand_string"),
+            "performance_cores": sysctl("hw.perflevel0.physicalcpu"),
+            "efficiency_cores": sysctl("hw.perflevel1.physicalcpu"),
+            "memory_bytes": sysctl("hw.memsize"),
+            "l2_bytes_performance": sysctl("hw.perflevel0.l2cachesize"),
+            "os": command_output(["sw_vers", "-productVersion"]),
+            "cxx_flags": "-O3 -DNDEBUG -mcpu=native (CMake Release)",
+            "allocator": "system allocator in both programs (macOS libmalloc)",
+        })
+    else:
+        record.update({
+            "cpu": command_output(["sh", "-c", "lscpu | grep 'Model name' | sed 's/.*: *//'"]),
+            "cpu_quota": command_output(["sh", "-c", "cat /sys/fs/cgroup/cpu.max 2>/dev/null || nproc"]),
+            "nproc": command_output(["nproc"]),
+            "memory_limit": command_output(["sh", "-c", "cat /sys/fs/cgroup/memory.max 2>/dev/null"]),
+            "os": command_output(["sh", "-c", ". /etc/os-release && echo $PRETTY_NAME"]),
+            "kernel": command_output(["uname", "-r"]),
+            "cxx_flags": "-O3 -DNDEBUG -march=native (CMake Release)",
+            "allocator": "system allocator in both programs (glibc malloc)",
+        })
+    return record
 
 
 def run_cell(program, arguments):
@@ -76,7 +98,7 @@ def run_cell(program, arguments):
     return rows
 
 
-def cells(quick):
+def cells(quick, thread_counts):
     sizes = [100_000, 1_000_000] if quick else SIZES
     operations = 200_000 if quick else 1_000_000
     for size in sizes:
@@ -86,7 +108,7 @@ def cells(quick):
     thread_size = 1_000_000 if quick else 10_000_000
     thread_operations = 200_000 if quick else 1_000_000
     for key in THREAD_KEYS:
-        for threads in THREAD_COUNTS:
+        for threads in thread_counts:
             yield ["threads", key, str(thread_size), str(thread_operations), str(threads)]
 
 
@@ -134,7 +156,14 @@ def main():
     parser.add_argument("--output", required=True)
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--quick", action="store_true")
+    parser.add_argument("--thread-counts", default=",".join(str(count) for count in THREAD_COUNTS),
+                        help="comma-separated thread counts for the shared map's threaded cells")
+    parser.add_argument("--cxx", default="/opt/homebrew/opt/llvm/bin/clang++",
+                        help="the C++ compiler the release tree used, for the record")
+    parser.add_argument("--rustc", default=os.path.expanduser("~/.cargo/bin/rustc"),
+                        help="the rustc the reference bench used, for the record")
     options = parser.parse_args()
+    options.thread_counts = [int(count) for count in options.thread_counts.split(",")]
     if os.path.exists(options.output):
         sys.exit("refusing to overwrite %s" % options.output)
     for program in (CPP, RUST):
@@ -142,7 +171,7 @@ def main():
             sys.exit("missing %s: build it first" % program)
     os.makedirs(options.output)
     with open(os.path.join(options.output, "environment.json"), "w") as handle:
-        json.dump(environment(), handle, indent=2)
+        json.dump(environment(options), handle, indent=2)
     rows = []
     raw_path = os.path.join(options.output, "raw.csv")
     with open(raw_path, "w", newline="") as handle:
@@ -150,7 +179,7 @@ def main():
         writer.writerow(["implementation", "map", "key", "size", "threads", "workload",
                          "operations", "ns_per_op", "checksum", "repetition"])
         for repetition in range(options.repetitions):
-            for cell in cells(options.quick):
+            for cell in cells(options.quick, options.thread_counts):
                 order = [CPP, RUST] if repetition % 2 == 0 else [RUST, CPP]
                 for program in order:
                     for row in run_cell(program, cell):
