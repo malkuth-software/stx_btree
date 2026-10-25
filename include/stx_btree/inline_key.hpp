@@ -122,18 +122,28 @@ public:
         return a_length < b_length ? -1 : 1;
     }
 
-    // Number of leading bytes of a that equal bytes[0, length).
+    // Number of leading bytes of a that equal bytes[0, length), compared a
+    // word at a time; the tail, by overlapping fixed-size windows.
     [[nodiscard]] static std::size_t shared_length(
         const std::uint8_t* a, std::size_t a_length,
         const std::uint8_t* bytes, std::size_t length) noexcept {
         const std::size_t limit = a_length < length ? a_length : length;
-        std::size_t index = 0;
-        for (index = 0; index < limit; index += 1) {
-            if (a[index] != bytes[index]) {
-                break;
+        std::size_t offset = 0;
+        while (offset + inline_window_bytes <= limit) {
+            const InlineWord differing = load_big_endian_64(a + offset) ^ load_big_endian_64(bytes + offset);
+            if (differing != 0) {
+                return offset + leading_zero_bits(differing) / 8;
+            }
+            offset += inline_window_bytes;
+        }
+        if (offset < limit) {
+            const InlineWord differing = window(a, limit, offset) ^ window(bytes, limit, offset);
+            if (differing != 0) {
+                const std::size_t difference = offset + leading_zero_bits(differing) / 8;
+                return difference < limit ? difference : limit;
             }
         }
-        return index;
+        return limit;
     }
 
     static constexpr std::size_t no_difference = static_cast<std::size_t>(-1);
