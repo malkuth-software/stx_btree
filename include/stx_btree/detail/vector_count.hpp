@@ -56,6 +56,12 @@ private:
 #if defined(__GNUC__) || defined(__clang__)
     typedef Slot Lanes __attribute__((vector_size(16)));
 
+#if defined(__clang__)
+    static constexpr bool sums_by_shuffles = false;
+#else
+    static constexpr bool sums_by_shuffles = true;
+#endif
+
     [[nodiscard]] static Lanes tail_mask() noexcept {
         Lanes keep = {};
         std::size_t lane = 0;
@@ -88,23 +94,29 @@ private:
         *equal_out = sum_lanes(equal);
     }
 
-    // The sum of the lanes by halving: each step adds the upper half of
-    // what remains onto the lower half. Written as shuffles because GCC 13
-    // turned the plain lane loop into one extract and one add per lane on
-    // x86-64 (16 extracts per node for two-byte slots).
+    // The sum of the lanes. Under GCC, eight two-byte lanes are summed by
+    // halving, each step adding the upper half of what remains onto the
+    // lower half: GCC 13 compiled the plain lane loop there into one extract
+    // and one add per lane on x86-64 (sixteen extracts per node), and the
+    // shuffles cut its unsync u64 lookups at 10M by about a quarter on the
+    // compute pod (results/2026-10-25-pod-x86-diagnosis). Clang keeps the
+    // loop: it compiles the loop well on x86-64, and the shuffles made LLVM
+    // 23's u64 lookups on the M4 6% slower. Four and two lanes keep the loop
+    // under both.
     [[nodiscard]] STX_BTREE_ALWAYS_INLINE static Slot sum_lanes(Lanes lanes) noexcept {
-        if constexpr (group_lanes == 8) {
+        if constexpr (group_lanes == 8 && sums_by_shuffles) {
             lanes += __builtin_shufflevector(lanes, lanes, 4, 5, 6, 7, 0, 1, 2, 3);
             lanes += __builtin_shufflevector(lanes, lanes, 2, 3, 0, 1, 2, 3, 0, 1);
             lanes += __builtin_shufflevector(lanes, lanes, 1, 0, 1, 0, 1, 0, 1, 0);
-        } else if constexpr (group_lanes == 4) {
-            lanes += __builtin_shufflevector(lanes, lanes, 2, 3, 0, 1);
-            lanes += __builtin_shufflevector(lanes, lanes, 1, 0, 1, 0);
+            return lanes[0];
         } else {
-            static_assert(group_lanes == 2, "a lane group holds 2, 4 or 8 slots");
-            lanes += __builtin_shufflevector(lanes, lanes, 1, 0);
+            Slot total = 0;
+            std::size_t lane = 0;
+            for (lane = 0; lane < group_lanes; lane += 1) {
+                total = static_cast<Slot>(total + lanes[lane]);
+            }
+            return total;
         }
-        return lanes[0];
     }
 #else
     static void count(const Slot* slots, Slot target, std::size_t* below_out, std::size_t* equal_out) noexcept {

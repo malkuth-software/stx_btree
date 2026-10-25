@@ -83,6 +83,14 @@ binary search over the tied keys. The search adapters are forced inline and
 the tie searches kept out of line, which bbtree measured as necessary (D41,
 D49); `detail/inlining.hpp` says so to GCC and Clang.
 
+The lanes are summed at the end of each count. Under GCC the eight two-byte
+lanes are summed by three shuffle-and-add steps instead of a loop: GCC 13
+compiled the loop into one extract and one add per lane on x86-64, and the
+shuffles made its unsync u64 lookups at 10M about 25% faster on the compute
+pod. Clang keeps the loop, which it compiles well on x86-64 and which
+measured 6% faster than the shuffles with LLVM 23 on the M4. bbtree, being
+Rust, has only the LLVM case. (results/2026-10-25-pod-x86-diagnosis.)
+
 ## The unsync map
 
 `find` descends without a stack; `insert` first tries the remembered last

@@ -114,6 +114,44 @@ descent, compared with LLVM's on x86; the 16-byte lane groups against
 bbtree's explicit AVX-512 count on this Zen 5 core; and a Clang build on the
 same pod, which separates the compiler from the target.
 
+### Diagnosis, 2026-10-25
+
+Four jobs on the same pod (`benchmarks/pod/diagnose.sh`, results in
+`results/2026-10-25-pod-x86-diagnosis/`) built the C++ bench several ways and
+ran each beside bbtree, interleaved within every repetition (3–5) so the
+shared host's load (load average 30–75 on the 4-vCPU slice) falls on all
+alike. Ratios are C++ time over bbtree time; cells move ±8% between runs.
+
+| cell | GCC 13 (before) | GCC 13 (after) | Clang 18 |
+| --- | ---: | ---: | ---: |
+| unsync u64 10M get_hit | 1.79–1.84 | 1.37 | 1.13–1.24 |
+| unsync u64 10M get_miss | 1.83–1.87 | 1.56 | 1.12–1.17 |
+| shared u64 10M get_hit | 1.90–1.94 | 1.81 | 1.23–1.26 |
+| unsync str16 1M get_hit | 1.89–1.92 | (unchanged code) | 1.78–1.81 |
+| unsync u64 10M insert_random | 1.81–1.83 | 1.72 | 1.46–1.64 |
+
+What that separates:
+
+- **GCC's code on x86-64 is most of the integer lookup gap.** Clang builds of
+  the same source run u64 lookups at 1.1–1.3× bbtree; GCC at 1.8–1.9×.
+  `-march=x86-64-v3` (no AVX-512) and `-mtune=generic` change nothing, so it
+  is neither AVX-512 nor tuning. GCC compiled the lane sum at the end of the
+  node count into one extract and one add per lane (764 `vpextrw` in the
+  bench binary); summing by shuffles under GCC (142) took unsync u64 lookups
+  from 1.82× to 1.37× bbtree. LLVM keeps the loop (see DESIGN.md, "The node
+  search"). GCC lacks the AVX-512 unsigned compare in this kernel too
+  (three instructions per compare instead of one); that is not yet changed.
+- **Strings are behind with either compiler** (1.7–1.9×), while on the M4
+  they were 1.2–1.35× *faster* than bbtree. A 16-byte key fits libc++'s inline
+  string (22 bytes, macOS) but not libstdc++'s (15, Linux), so on Linux every
+  stored key is on the heap; bbtree's `String` is always on the heap, so this
+  explains the M4 lead, not yet the Linux lag. A libc++ build on the pod would
+  separate the library, but libc++ 18 lacks `std::atomic_ref`.
+- **Writes are behind with either compiler** (inserts and removes 1.4–1.7×);
+  not yet diagnosed.
+- Clang 18 on Linux found a portability defect, now fixed: the sized aligned
+  `operator delete` is not declared there by default.
+
 ## Reproduce on the Mac mini
 
 ```sh

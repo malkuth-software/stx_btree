@@ -111,7 +111,11 @@ alongside appends and the shared map's batched inserts (a partial,
 single-repetition run). On Linux x86-64 with GCC 13 (AMD EPYC 9575F, full
 matrix, three repetitions) the C++ form is behind: about 0.70 of bbtree's
 speed over all cells, 0.56–0.63 on point lookups, at parity on scans. That
-gap is open and undiagnosed; the measurements page lists what to check.
+gap is partly diagnosed: most of the integer lookup gap is GCC's code on
+x86-64 (Clang 18 builds run u64 lookups at 1.1–1.3× bbtree's time, and a fix
+in the node count took GCC's unsync u64 lookups from 1.8× to 1.4×); string
+lookups (1.7–1.9×) and writes (1.4–1.7×) are behind with either compiler and
+still open.
 
 ## Optimal search trees
 

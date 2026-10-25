@@ -1,0 +1,168 @@
+[ 50%] Building CXX object CMakeFiles/stx_btree_bench.dir/benchmarks/cpp/stx_btree_bench.cpp.o
+clang++: warning: argument unused during compilation: '-stdlib=libc++' [-Wunused-command-line-argument]
+In file included from /workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/benchmarks/cpp/stx_btree_bench.cpp:14:
+In file included from /workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/bbtree_map.hpp:14:
+In file included from /workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/batch.hpp:23:
+In file included from /workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/latched_tree.hpp:22:
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/latch.hpp:76:24: error: no template named 'atomic_ref' in namespace 'std'
+   76 |     [[nodiscard]] std::atomic_ref<std::uint64_t> atomic() const noexcept {
+      |                   ~~~~~^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/latch.hpp:77:21: error: no member named 'atomic_ref' in namespace 'std'
+   77 |         return std::atomic_ref<std::uint64_t>(*word);
+      |                ~~~~~^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/latch.hpp:77:45: error: expected '(' for function-style cast or type construction
+   77 |         return std::atomic_ref<std::uint64_t>(*word);
+      |                                ~~~~~~~~~~~~~^
+In file included from /workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/benchmarks/cpp/stx_btree_bench.cpp:14:
+In file included from /workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/bbtree_map.hpp:14:
+In file included from /workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/batch.hpp:23:
+In file included from /workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/latched_tree.hpp:23:
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/node.hpp:137:24: error: no template named 'atomic_ref' in namespace 'std'
+  137 |             const std::atomic_ref<std::uint16_t> field((*fields).length);
+      |                   ~~~~~^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/node.hpp:147:24: error: no template named 'atomic_ref' in namespace 'std'
+  147 |             const std::atomic_ref<std::uint16_t> field((*fields).length);
+      |                   ~~~~~^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/node.hpp:156:24: error: no template named 'atomic_ref' in namespace 'std'
+  156 |             const std::atomic_ref<std::uint16_t> field((*fields).prefix_length);
+      |                   ~~~~~^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/node.hpp:166:24: error: no template named 'atomic_ref' in namespace 'std'
+  166 |             const std::atomic_ref<std::uint16_t> field((*fields).prefix_length);
+      |                   ~~~~~^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/node.hpp:175:24: error: no template named 'atomic_ref' in namespace 'std'
+  175 |             const std::atomic_ref<std::uint8_t> field((*fields).has_head);
+      |                   ~~~~~^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/node.hpp:185:24: error: no template named 'atomic_ref' in namespace 'std'
+  185 |             const std::atomic_ref<std::uint8_t> field((*fields).has_head);
+      |                   ~~~~~^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/node.hpp:750:24: error: no template named 'atomic_ref' in namespace 'std'
+  750 |             const std::atomic_ref<std::uintptr_t> field(edges()[index]);
+      |                   ~~~~~^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/node.hpp:758:24: error: no template named 'atomic_ref' in namespace 'std'
+  758 |             const std::atomic_ref<std::uintptr_t> field(edges()[index]);
+      |                   ~~~~~^
+In file included from /workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/benchmarks/cpp/stx_btree_bench.cpp:14:
+In file included from /workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/bbtree_map.hpp:14:
+In file included from /workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/batch.hpp:23:
+In file included from /workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/latched_tree.hpp:25:
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/root_page.hpp:44:24: error: no template named 'atomic_ref' in namespace 'std'
+   44 |             const std::atomic_ref<std::uint8_t> field(*shared_length_byte());
+      |                   ~~~~~^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/root_page.hpp:53:24: error: no template named 'atomic_ref' in namespace 'std'
+   53 |             const std::atomic_ref<std::uint8_t> field(*shared_length_byte());
+      |                   ~~~~~^
+In file included from /workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/benchmarks/cpp/stx_btree_bench.cpp:14:
+In file included from /workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/bbtree_map.hpp:14:
+In file included from /workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/batch.hpp:23:
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/latched_tree.hpp:799:32: error: no template named 'atomic_ref' in namespace 'std'
+  799 |                     const std::atomic_ref<std::uint8_t> tag_slot(leaf.hash_tags()[index]);
+      |                           ~~~~~^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/latched_tree.hpp:1062:37: error: no matching member function for call to 'insert_into'
+ 1062 |             const InsertStep step = insert_into(held, at_separator, key, value, policy, result, &edge);
+      |                                     ^~~~~~~~~~~
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/latched_tree.hpp:971:20: note: in instantiation of function template specialization 'stx_btree::detail::LatchedTree<stx_btree::detail::TreeShape<unsigned long, unsigned long, true>, stx_btree::GlobalPageAllocator>::insert_splitting<stx_btree::BBTreeMap<unsigned long, unsigned long>::ReplaceValue>' requested here
+  971 |             return insert_splitting(std::move(key), std::move(value), policy);
+      |                    ^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/bbtree_map.hpp:104:21: note: in instantiation of function template specialization 'stx_btree::detail::LatchedTree<stx_btree::detail::TreeShape<unsigned long, unsigned long, true>, stx_btree::GlobalPageAllocator>::insert<stx_btree::BBTreeMap<unsigned long, unsigned long>::ReplaceValue>' requested here
+  104 |         return tree.insert(std::move(key), std::move(value), policy);
+      |                     ^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/benchmarks/cpp/stx_btree_bench.cpp:295:17: note: in instantiation of member function 'stx_btree::BBTreeMap<unsigned long, unsigned long>::insert' requested here
+  295 |             map.insert(keys[index], index);
+      |                 ^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/benchmarks/cpp/stx_btree_bench.cpp:520:30: note: in instantiation of member function '(anonymous namespace)::SharedBench<(anonymous namespace)::U64Keys>::run' requested here
+  520 |         SharedBench<Family>::run(size, operations);
+      |                              ^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/benchmarks/cpp/stx_btree_bench.cpp:544:16: note: in instantiation of function template specialization '(anonymous namespace)::dispatch_map<(anonymous namespace)::U64Keys>' requested here
+  544 |         return dispatch_map<U64Keys>(map_kind, size, operations, threads);
+      |                ^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/latched_tree.hpp:1016:30: note: candidate template ignored: substitution failure [with Policy = stx_btree::BBTreeMap<unsigned long, unsigned long>::ReplaceValue]
+ 1016 |     [[nodiscard]] InsertStep insert_into(
+      |                              ^
+In file included from /workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/benchmarks/cpp/stx_btree_bench.cpp:14:
+In file included from /workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/bbtree_map.hpp:14:
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/batch.hpp:555:57: error: no matching member function for call to 'insert_into'
+  555 |             const typename Tree::InsertStep step = tree.insert_into(
+      |                                                    ~~~~~^~~~~~~~~~~
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/bbtree_map.hpp:116:58: note: in instantiation of function template specialization 'stx_btree::detail::LatchedBatch<stx_btree::detail::TreeShape<unsigned long, unsigned long, true>, stx_btree::GlobalPageAllocator>::insert_many<stx_btree::BBTreeMap<unsigned long, unsigned long>::Entry, 16UL, stx_btree::BBTreeMap<unsigned long, unsigned long>::ReplaceValue>' requested here
+  116 |         detail::LatchedBatch<Shape, Allocator>::template insert_many<Entry, Count>(tree, entries.data(), outputs.data(), policy);
+      |                                                          ^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/benchmarks/cpp/stx_btree_bench.cpp:390:25: note: in instantiation of function template specialization 'stx_btree::BBTreeMap<unsigned long, unsigned long>::insert_many<16UL>' requested here
+  390 |             batched_map.insert_many(std::move(entries));
+      |                         ^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/benchmarks/cpp/stx_btree_bench.cpp:520:30: note: in instantiation of member function '(anonymous namespace)::SharedBench<(anonymous namespace)::U64Keys>::run' requested here
+  520 |         SharedBench<Family>::run(size, operations);
+      |                              ^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/benchmarks/cpp/stx_btree_bench.cpp:544:16: note: in instantiation of function template specialization '(anonymous namespace)::dispatch_map<(anonymous namespace)::U64Keys>' requested here
+  544 |         return dispatch_map<U64Keys>(map_kind, size, operations, threads);
+      |                ^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/latched_tree.hpp:1016:30: note: candidate template ignored: substitution failure [with Policy = stx_btree::BBTreeMap<unsigned long, unsigned long>::ReplaceValue]
+ 1016 |     [[nodiscard]] InsertStep insert_into(
+      |                              ^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/latched_tree.hpp:1062:37: error: no matching member function for call to 'insert_into'
+ 1062 |             const InsertStep step = insert_into(held, at_separator, key, value, policy, result, &edge);
+      |                                     ^~~~~~~~~~~
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/latched_tree.hpp:971:20: note: in instantiation of function template specialization 'stx_btree::detail::LatchedTree<stx_btree::detail::TreeShape<std::array<unsigned char, 16>, unsigned long, true>, stx_btree::GlobalPageAllocator>::insert_splitting<stx_btree::BBTreeMap<std::array<unsigned char, 16>, unsigned long>::ReplaceValue>' requested here
+  971 |             return insert_splitting(std::move(key), std::move(value), policy);
+      |                    ^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/bbtree_map.hpp:104:21: note: in instantiation of function template specialization 'stx_btree::detail::LatchedTree<stx_btree::detail::TreeShape<std::array<unsigned char, 16>, unsigned long, true>, stx_btree::GlobalPageAllocator>::insert<stx_btree::BBTreeMap<std::array<unsigned char, 16>, unsigned long>::ReplaceValue>' requested here
+  104 |         return tree.insert(std::move(key), std::move(value), policy);
+      |                     ^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/benchmarks/cpp/stx_btree_bench.cpp:295:17: note: in instantiation of member function 'stx_btree::BBTreeMap<std::array<unsigned char, 16>, unsigned long>::insert' requested here
+  295 |             map.insert(keys[index], index);
+      |                 ^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/benchmarks/cpp/stx_btree_bench.cpp:520:30: note: in instantiation of member function '(anonymous namespace)::SharedBench<(anonymous namespace)::UuidKeys>::run' requested here
+  520 |         SharedBench<Family>::run(size, operations);
+      |                              ^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/benchmarks/cpp/stx_btree_bench.cpp:547:16: note: in instantiation of function template specialization '(anonymous namespace)::dispatch_map<(anonymous namespace)::UuidKeys>' requested here
+  547 |         return dispatch_map<UuidKeys>(map_kind, size, operations, threads);
+      |                ^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/latched_tree.hpp:1016:30: note: candidate template ignored: substitution failure [with Policy = stx_btree::BBTreeMap<std::array<unsigned char, 16>, unsigned long>::ReplaceValue]
+ 1016 |     [[nodiscard]] InsertStep insert_into(
+      |                              ^
+In file included from /workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/benchmarks/cpp/stx_btree_bench.cpp:14:
+In file included from /workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/bbtree_map.hpp:14:
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/batch.hpp:555:57: error: no matching member function for call to 'insert_into'
+  555 |             const typename Tree::InsertStep step = tree.insert_into(
+      |                                                    ~~~~~^~~~~~~~~~~
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/bbtree_map.hpp:116:58: note: in instantiation of function template specialization 'stx_btree::detail::LatchedBatch<stx_btree::detail::TreeShape<std::array<unsigned char, 16>, unsigned long, true>, stx_btree::GlobalPageAllocator>::insert_many<stx_btree::BBTreeMap<std::array<unsigned char, 16>, unsigned long>::Entry, 16UL, stx_btree::BBTreeMap<std::array<unsigned char, 16>, unsigned long>::ReplaceValue>' requested here
+  116 |         detail::LatchedBatch<Shape, Allocator>::template insert_many<Entry, Count>(tree, entries.data(), outputs.data(), policy);
+      |                                                          ^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/benchmarks/cpp/stx_btree_bench.cpp:390:25: note: in instantiation of function template specialization 'stx_btree::BBTreeMap<std::array<unsigned char, 16>, unsigned long>::insert_many<16UL>' requested here
+  390 |             batched_map.insert_many(std::move(entries));
+      |                         ^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/benchmarks/cpp/stx_btree_bench.cpp:520:30: note: in instantiation of member function '(anonymous namespace)::SharedBench<(anonymous namespace)::UuidKeys>::run' requested here
+  520 |         SharedBench<Family>::run(size, operations);
+      |                              ^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/benchmarks/cpp/stx_btree_bench.cpp:547:16: note: in instantiation of function template specialization '(anonymous namespace)::dispatch_map<(anonymous namespace)::UuidKeys>' requested here
+  547 |         return dispatch_map<UuidKeys>(map_kind, size, operations, threads);
+      |                ^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/latched_tree.hpp:1016:30: note: candidate template ignored: substitution failure [with Policy = stx_btree::BBTreeMap<std::array<unsigned char, 16>, unsigned long>::ReplaceValue]
+ 1016 |     [[nodiscard]] InsertStep insert_into(
+      |                              ^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/latched_tree.hpp:1062:37: error: no matching member function for call to 'insert_into'
+ 1062 |             const InsertStep step = insert_into(held, at_separator, key, value, policy, result, &edge);
+      |                                     ^~~~~~~~~~~
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/latched_tree.hpp:971:20: note: in instantiation of function template specialization 'stx_btree::detail::LatchedTree<stx_btree::detail::TreeShape<std::string, unsigned long, true>, stx_btree::GlobalPageAllocator>::insert_splitting<stx_btree::BBTreeMap<std::string, unsigned long>::ReplaceValue>' requested here
+  971 |             return insert_splitting(std::move(key), std::move(value), policy);
+      |                    ^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/bbtree_map.hpp:104:21: note: in instantiation of function template specialization 'stx_btree::detail::LatchedTree<stx_btree::detail::TreeShape<std::string, unsigned long, true>, stx_btree::GlobalPageAllocator>::insert<stx_btree::BBTreeMap<std::string, unsigned long>::ReplaceValue>' requested here
+  104 |         return tree.insert(std::move(key), std::move(value), policy);
+      |                     ^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/benchmarks/cpp/stx_btree_bench.cpp:295:17: note: in instantiation of member function 'stx_btree::BBTreeMap<std::string, unsigned long>::insert' requested here
+  295 |             map.insert(keys[index], index);
+      |                 ^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/benchmarks/cpp/stx_btree_bench.cpp:520:30: note: in instantiation of member function '(anonymous namespace)::SharedBench<(anonymous namespace)::Str16Keys>::run' requested here
+  520 |         SharedBench<Family>::run(size, operations);
+      |                              ^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/benchmarks/cpp/stx_btree_bench.cpp:550:16: note: in instantiation of function template specialization '(anonymous namespace)::dispatch_map<(anonymous namespace)::Str16Keys>' requested here
+  550 |         return dispatch_map<Str16Keys>(map_kind, size, operations, threads);
+      |                ^
+/workspace/fable/jobs/20261025T065027Z-5e5eb277/work/stx_btree/include/stx_btree/detail/latched_tree.hpp:1016:30: note: candidate template ignored: substitution failure [with Policy = stx_btree::BBTreeMap<std::string, unsigned long>::ReplaceValue]
+ 1016 |     [[nodiscard]] InsertStep insert_into(
+      |                              ^
+fatal error: too many errors emitted, stopping now [-ferror-limit=]
+20 errors generated.
+gmake[3]: *** [CMakeFiles/stx_btree_bench.dir/build.make:76: CMakeFiles/stx_btree_bench.dir/benchmarks/cpp/stx_btree_bench.cpp.o] Error 1
+gmake[2]: *** [CMakeFiles/Makefile2:85: CMakeFiles/stx_btree_bench.dir/all] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:92: CMakeFiles/stx_btree_bench.dir/rule] Error 2
+gmake: *** [Makefile:169: stx_btree_bench] Error 2

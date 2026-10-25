@@ -49,7 +49,12 @@ deliberate leak) and on Linux.
 | Apple M4, macOS 26.5 | Homebrew LLVM 23.1.2 (`/opt/homebrew/opt/llvm/bin/clang++`), `-mcpu=native` | release, sanitizer, relocated install |
 | Apple M4, macOS 26.5 | Homebrew GCC 15.2 (`g++-15`) | release |
 | Linux x86-64 (Ubuntu 24.04, AMD EPYC 9575F slice, compute pod) | GCC 13.3, `-march=native` | release (no warnings; tests in the benchmark job) |
+| Linux x86-64 (compute pod) | Ubuntu Clang 18.1 with libstdc++ 13, `-march=native` | release; the tests except the stress test |
 | macOS arm64 | Apple clang 21 | development builds of the tests |
+
+libc++ before version 19 has no `std::atomic_ref`, which the shared map's
+latches and node headers use, so the library does not build against libc++
+18 (Clang 18's own); use libstdc++ there, or libc++ 19 or later.
 
 `tools/verify.sh` runs the first row on the owner's Mac mini (through
 `m4build`): the release tree with its tests, the sanitizer tree with its
