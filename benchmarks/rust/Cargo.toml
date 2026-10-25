@@ -1,0 +1,18 @@
+[package]
+name = "bbtree-reference-bench"
+version = "0.0.0"
+publish = false
+edition = "2024"
+description = "Runs bbtree (Rust) on the workloads of stx_btree's C++ benchmark."
+
+[dependencies]
+# The pinned upstream checkout (see PROVENANCE.md); not vendored.
+bbtree = { path = "../../upstream/bbtree/bbtree" }
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+debug = "line-tables-only"
+
+[workspace]
+members = ["."]
