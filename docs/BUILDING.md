@@ -14,14 +14,17 @@ ctest --test-dir build --output-on-failure
 The tests are `stx_btree_unsync_map_test` and `stx_btree_shared_map_test`
 (differential against `std::map`, with a full structural invariant check),
 `stx_btree_stress_test` (ten threads, two seconds per tree shape; pass a
-number of seconds to run longer) and `stx_btree_custom_key_example`.
+number of seconds to run longer), `stx_btree_optimal_tree_test` (the exact
+constructions against enumeration and the cubic recurrence),
+`stx_btree_optimal_map_test` (packing against brute force, the static map
+against its keys) and `stx_btree_custom_key_example`.
 
 Options:
 
 | Option | Default | Effect |
 | --- | --- | --- |
 | `STX_BTREE_BUILD_TESTS` | on at top level | the tests and example |
-| `STX_BTREE_BUILD_BENCHMARKS` | on at top level | `stx_btree_bench` |
+| `STX_BTREE_BUILD_BENCHMARKS` | on at top level | `stx_btree_bench`, `stx_btree_optimal_map_bench` |
 | `STX_BTREE_SANITIZE` | off | ASan and UBSan, no recovery |
 | `STX_BTREE_WARNINGS_AS_ERRORS` | on | `-Werror` on the repository's own programs |
 

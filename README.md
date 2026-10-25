@@ -107,8 +107,23 @@ identical keys, queries and checksums: see
 method. In short, at 1M entries the C++ form tracks bbtree closely (most cells
 within ±10%, with string removals, scans and iteration faster in C++); the
 shared map at 10M integer keys is 10–27% behind and is the main open gap,
-alongside appends and the shared map's batched inserts. The figures so far
-come from a partial single-repetition run; a full matrix is queued.
+alongside appends and the shared map's batched inserts (a partial,
+single-repetition run). On Linux x86-64 with GCC 13 (AMD EPYC 9575F, full
+matrix, three repetitions) the C++ form is behind: about 0.70 of bbtree's
+speed over all cells, 0.56–0.63 on point lookups, at parity on scans. That
+gap is open and undiagnosed; the measurements page lists what to check.
+
+## Optimal search trees
+
+Beside the maps, not from bbtree: exact optimal binary search trees for given
+search weights (Knuth's O(n²) construction and the core-sparse Monge layer
+construction of the papers_please `obst` manuscript), and `OptimalMap`, a
+static map that packs a weight-optimal tree into nodes searched the bbtree
+way. At 8M keys under Zipf access (s = 1.0–1.2) it answers lookups 1.5–1.6×
+faster than the unsync map on the M4; at 1M keys it does not help. Knuth is
+still faster than the layer construction at every size measured (n ≤ 8192).
+[Optimal trees](docs/OPTIMAL_TREES.md) has the design, the checks and the
+numbers.
 
 ## Scope
 

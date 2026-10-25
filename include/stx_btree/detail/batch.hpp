@@ -17,11 +17,12 @@
 //   its leaf                 the leaf's header line
 //   a unique leaf candidate  the candidate's entry
 //
-// Prefetch hints are issued here and nowhere else in the library (D46).
+// Prefetch hints go through detail/prefetch.hpp only (D46).
 
 #include "stx_btree/detail/inlining.hpp"
 #include "stx_btree/detail/latched_tree.hpp"
 #include "stx_btree/detail/node.hpp"
+#include "stx_btree/detail/prefetch.hpp"
 #include "stx_btree/detail/root_page.hpp"
 
 #include <bit>
@@ -32,19 +33,6 @@
 #include <optional>
 
 namespace stx_btree::detail {
-
-// The one place that issues a software prefetch: a read hint for the line
-// a lane reads next. A no-op where the compiler has no hint.
-class Prefetcher final {
-public:
-    STX_BTREE_ALWAYS_INLINE static void hint(const void* line) noexcept {
-#if defined(__GNUC__) || defined(__clang__)
-        __builtin_prefetch(line, 0, 3);
-#else
-        (void)line;
-#endif
-    }
-};
 
 // Lanes are run in groups of at most this many, one live bit each.
 inline constexpr std::size_t lanes_per_round = 64;

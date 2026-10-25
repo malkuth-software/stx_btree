@@ -78,3 +78,21 @@ inspection views and visualizer, the fuzz targets, the Shuttle schedules,
 and the Verus proofs. The proofs state properties of the Rust encodings;
 the C++ encodings are tested against them by the differential tests, not
 proven.
+
+## Optimal search trees and the static map
+
+`search_weights.hpp`, `optimal_tree.hpp`, `detail/monge_product.hpp`,
+`detail/tree_packing.hpp` and `optimal_map.hpp` are not from bbtree. The
+exact layer construction (`monge_layers`) and the core-sparse Monge product
+follow the manuscript "Core-Sparse Monge Construction for Full Optimal
+Binary Search Trees" (OpenAI Codex Sydney; problem selection and
+sponsorship: Joshuah Rainstar) in
+[falseywinchnet/papers_please](https://github.com/falseywinchnet/papers_please)
+at commit eef656fae6e6bf65fd19b5f74abc6081ad6e67f7, and rewrite its MIT-licensed
+prototype `obst/code/compact_obst.cpp` (notice in [NOTICE](NOTICE)) in the
+house style, with compressed-row storage in place of per-row lists. Knuth's
+O(n^2) construction, Mehlhorn's bisection rule, the Gil–Itai packing and the
+count layout are standard; the map's node search reuses this repository's
+bbtree-derived inline keys, lane-group count and prefetch. Written by Claude
+Code (Claude Opus 5.5) under the owner's direction.
+[docs/OPTIMAL_TREES.md](docs/OPTIMAL_TREES.md) has the design and measurements.

@@ -17,4 +17,12 @@ First C++ form of bbtree 0.1.5 (upstream commit 8adae97).
   `for_each_mut`.
 - Differential, threaded and stress tests, a custom-key example, an
   installed-consumer test, matched C++/Rust benchmarks and their runner.
+- Optimal binary search trees (`optimal_tree.hpp`): Knuth, the core-sparse
+  Monge layer construction (rewritten from papers_please `obst`), and a
+  weight-balanced approximation, with exact 128-bit costs.
+- `OptimalMap` (`optimal_map.hpp`): a static map laid out for an access
+  distribution, with tree packing, count layout for flat regions,
+  `find` and `find_many`; `optimal_map_bench`.
+- Measurements on the Linux x86-64 compute pod (GCC 13.3), where the C++ form
+  is behind bbtree.
 - Not a stable ABI or memory format.
