@@ -1,0 +1,125 @@
+# stx_btree
+
+### bbtree, in C++
+
+**A cache-conscious ordered map, single-threaded or shared between threads.**
+
+stx_btree is a C++20 form of [**bbtree**](https://github.com/XiangpengHao/bbtree),
+the B-tree by [**Xiangpeng Hao**](https://xiangpeng.systems). The data
+structures, node layouts, search, prefix upkeep and concurrency protocol are
+bbtree's, translated from its Rust source and its design record; see
+[how it works](https://bbtree.xiangpeng.systems/post) for the author's account.
+This repository provides the same two maps as a header-only C++ library:
+
+- `stx_btree::unsync::BBTreeMap<K, V>`: one thread, iterators, `find`,
+  `insert`, `remove`, `pop_first`/`pop_last`, `lower_bound`, and batched
+  `get_many`/`insert_many`;
+- `stx_btree::BBTreeMap<K, V>`: shared by threads with no locks to hold, no
+  epochs and no guards; lookups copy values out (`get_copied`) or run a
+  visitor on the entry (`read`, `update`), with scans, `remove_if`,
+  `update_or_insert`, and batched `get_many_copied`/`insert_many`.
+
+[Design](docs/DESIGN.md) · [Build](docs/BUILDING.md) ·
+[Measurements](docs/MEASUREMENTS.md) · [Provenance](PROVENANCE.md) ·
+[License: MIT OR Apache-2.0](LICENSE)
+
+## The construction
+
+Every key has an **inline key**: a fixed-width window of an
+order-preserving byte encoding. Nodes keep these windows in a dense array and
+search them by counting, in vector lane groups, how many lie below the
+query; a key is read only when windows tie. Each node skips the bytes its
+**fences** (the separators beside it) share, so windows stay informative on
+keys with long common prefixes, and the root keeps what every key shares.
+Separator keys live in leaf **heads**, so internal nodes hold only windows
+and child pointers in 512-byte pages; leaves are 1 KiB. Leaves pair each key
+with its value, and keep a one-byte **hash tag** per string key.
+
+The shared map runs the same tree under **optimistic lock coupling**:
+internal nodes are read without latches and validated by version; leaves are
+latched; trivially copyable values are copied out without a latch where the
+leaf settles the key. A change larger than a leaf takes, without waiting,
+exactly the nodes the single-threaded operation will touch, then runs that
+operation. Freed pages stay type-stable on free lists until the map is
+destroyed, so racing readers never need epochs.
+
+Batched lookups and inserts descend in **lanes**, small state machines that
+prefetch the line they read next and yield, so independent cache misses
+overlap.
+
+## Example
+
+```cpp
+#include "stx_btree/bbtree_map.hpp"
+#include "stx_btree/unsync_map.hpp"
+
+#include <cstdint>
+#include <optional>
+#include <string>
+
+struct Bump final {
+    void operator()(const std::string&, std::uint64_t& count) const noexcept {
+        count += 1;
+    }
+};
+
+int main() {
+    stx_btree::unsync::BBTreeMap<std::uint64_t, std::string> names;
+    names.insert(42, "corro");
+    const std::string* found = names.find(42);
+
+    stx_btree::BBTreeMap<std::string, std::uint64_t> counts;   // shared by threads
+    counts.insert("requests", 0);
+    counts.update("requests", Bump{});
+    const std::optional<std::uint64_t> requests = counts.get_copied("requests");
+    return (found != nullptr && requests == 1) ? 0 : 1;
+}
+```
+
+Keys need an `InlineKeyTraits` specialization. `std::uint64_t`,
+`std::int64_t`, `std::array<std::uint8_t, N>` and `std::string` (queried by
+`std::string_view`) are provided; [the design notes](docs/DESIGN.md#keys)
+show how to add a key type.
+
+## Build
+
+C++20 and CMake 3.21 or later; no dependencies. The library is header-only.
+
+```sh
+git clone https://github.com/falseywinchnet/stx_btree.git
+cd stx_btree
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+Install with `cmake --install build --prefix <prefix>`, then
+`find_package(stx_btree 0.1 CONFIG REQUIRED)` and link
+`stx_btree::stx_btree`. [Building](docs/BUILDING.md) covers the sanitizer tree
+and the measured toolchain.
+
+## Against the Rust original
+
+Measured on an Apple M4 (Mac mini) with Homebrew LLVM 23 and nightly Rust,
+both at `-mcpu`/`target-cpu=native`, both on the system allocator, with
+identical keys, queries and checksums: see
+[measurements](docs/MEASUREMENTS.md) for every cell, its spread and the
+method. In short, the C++ form tracks bbtree closely: point lookups, inserts
+and removals are mostly within a few percent of the Rust crate, single-thread
+scans and iteration are faster, and the remaining gaps (appends, the shared
+map's batched inserts) are listed there.
+
+## Scope
+
+This form covers bbtree's tree core and both maps. File maps, stores and
+leaf annexes, the set types, the `entry` API, bulk building and splitting,
+and the formal proofs are not translated; [PROVENANCE.md](PROVENANCE.md) lists
+every difference. The format of memory is not a stable ABI.
+
+## Credit and license
+
+bbtree is the work of Xiangpeng Hao, whose design record
+([design/](https://github.com/XiangpengHao/bbtree/tree/main/design)) explains
+and measures every choice this form inherits. stx_btree is offered under the
+same terms as bbtree: the MIT License or the Apache License 2.0, at your
+option ([LICENSE](LICENSE), [NOTICE](NOTICE)).

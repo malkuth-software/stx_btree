@@ -1,0 +1,18 @@
+{
+  "recorded_at": "2026-10-25T00:27:16-0400",
+  "host": "Joshuahs-Mac-mini.local",
+  "machine": "arm64",
+  "cpu": "Apple M4",
+  "performance_cores": "4",
+  "efficiency_cores": "6",
+  "memory_bytes": "17179869184",
+  "l2_bytes_performance": "16777216",
+  "os": "26.5",
+  "cxx_compiler": "Homebrew clang version 23.1.2",
+  "cxx_flags": "-O3 -DNDEBUG -mcpu=native (CMake Release)",
+  "rustc": "rustc 1.99.0-nightly (969b803cb 2026-08-09)",
+  "rust_flags": "-C target-cpu=native, codegen-units=1, lto=fat",
+  "allocator": "system allocator in both programs (macOS libmalloc)",
+  "upstream_commit": "8adae97a0ed97e5c98fa2790312eb0aec9719846",
+  "stx_btree_commit": "8043fb7"
+}
