@@ -351,9 +351,15 @@ void check_u64_maps(SplitMix64& random) {
             const std::vector<std::uint64_t> absent = u64_absent(keys, random);
             const bool skewed = (checked & 1) != 0;
             const SearchWeights weights = random_weights(keys.size(), random, skewed);
-            check_map(keys, absent, weights, TreeConstruction::weight_balanced, "u64 balanced");
+            check_map(keys, absent, weights, TreeConstruction::weight_balanced, "u64 weight_balanced");
+            check_map(keys, absent, weights, TreeConstruction::balanced, "u64 balanced");
+            check_map(keys, absent, weights, TreeConstruction::bottom_up, "u64 bottom_up");
             if (keys.size() <= 5000) {
                 check_map(keys, absent, weights, TreeConstruction::knuth, "u64 knuth");
+                check_map(keys, absent, weights, TreeConstruction::knuth_scattered, "u64 knuth_scattered");
+                SearchWeights gaps_only = weights;
+                gaps_only.keys.assign(weights.keys.size(), 0);
+                check_map(keys, absent, gaps_only, TreeConstruction::garsia_wachs, "u64 garsia_wachs");
             }
             if (keys.size() <= 300) {
                 check_map(keys, absent, weights, TreeConstruction::monge_layers, "u64 monge");

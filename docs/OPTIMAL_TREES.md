@@ -2,10 +2,12 @@
 
 Two pieces, not from bbtree, built beside the maps:
 
-1. **Exact optimal binary search trees** for given search weights
+1. **Optimal binary search trees** for given search weights
    (`search_weights.hpp`, `optimal_tree.hpp`, `detail/monge_product.hpp`):
-   Knuth's O(n²) construction, and the manuscript's core-sparse Monge
-   construction, both returning exact 128-bit costs and the tree.
+   Knuth's O(n²) construction in two memory layouts, Garsia–Wachs for
+   gap-only weights, the balanced tree for constant weights, the
+   manuscript's core-sparse Monge construction, and two near-optimal ones,
+   all returning exact 128-bit costs and the tree.
 2. **`OptimalMap`**, a static ordered map laid out for a known access
    distribution (`optimal_map.hpp`, `detail/tree_packing.hpp`): a
    weight-optimal (or weight-balanced) binary tree, packed into multiway nodes
@@ -28,12 +30,104 @@ extension).
 
 ## Constructions
 
-| `TreeConstruction` | Exact | Time | Memory |
-| --- | --- | --- | --- |
-| `knuth` | yes | O(n²) | (n+1)(n+2)/2 cells of 20 B (670 MB at n = 8192, 6 GB at 24 576) |
-| `monge_layers` | yes | proved O(n^{3/2} log^{3/2}(n+1)) at W = O(n) (manuscript) | witnesses: 26–73 M integers at n = 8192 |
-| `monge_additive` | yes | candidate O(n log³(n+1)) at W = O(n) (under review) | as `monge_layers` |
-| `weight_balanced` | no | O(n log n) | O(n) |
+The caller knows its weights and picks the construction
+(`TreeConstruction`, also `OptimalMapPlan::tree`):
+
+| `TreeConstruction` | Exact | Use it for | Time | Memory |
+| --- | --- | --- | --- | --- |
+| `knuth` | yes | any weights | O(n²) | (n+1)(n+2)/2 cells of 8 B when W·(⌈log₂(n+1)⌉+2) < 2⁶³, else 16 B (1.07 GB at 16 384) |
+| `knuth_scattered` | yes | popularity scattered over the keys (Zipf, log-normal in random key order) | O(n²) | as `knuth` |
+| `garsia_wachs` | yes | gap-only weights (every key weight zero: alphabetic codes, miss-only workloads); refuses others | O(n log n) comparisons, O(n²) moves at worst | O(n) |
+| `balanced` | when every key weight is equal and every gap weight is equal | flat weights | O(n) | O(n) |
+| `bottom_up` | no, within 0.4–1.7% here | near-optimal trees at any size | about n log n × spine² | O(n) |
+| `weight_balanced` | no, within 0.2–22% here | the cheapest approximation | O(n log n) | O(n) |
+| `monge_layers` | yes | near-flat weights at very large n only | proved O(n^{3/2} log^{3/2}(n+1)) at W = O(n) (manuscript); grows with the mass | witnesses: 26–73 M integers at n = 8192 |
+| `monge_additive` | yes | as `monge_layers` | candidate O(n log³(n+1)) at W = O(n) (under review) | as `monge_layers` |
+
+A guide, by what the weights look like:
+
+- **All keys equal, all gaps equal:** `balanced`. A tree's cost with constant
+  key weight p and gap weight q is (p + q)·I + np + 2nq for internal path
+  length I, so the least-I tree is optimal and needs no search.
+- **Only gaps weighted:** `garsia_wachs` (about 9× faster than `knuth` at
+  16 384, linear memory).
+- **Anything else, exact:** `knuth`. When the popularity is scattered over
+  the keys rather than varying along them, `knuth_scattered` is faster (Zipf
+  and log-normal 1.4–1.5×, random 1.15×); when it varies smoothly along the
+  keys (ramps, a Laplacian around a centre key, uniform) it is 1.5–2.4×
+  slower. Both return the same tree.
+- **Large n, or exactness not needed:** `bottom_up`. It took about 1 ms at
+  16 384 keys against Knuth's 0.9–1.2 s and stayed within 1.7% of optimal on
+  every family measured. `weight_balanced` is cheaper still but loses up to
+  22% on Zipf weights.
+- The Monge layers need near-flat weights (small total deviation from a
+  constant) to pay; with the faster Knuth they no longer beat it at the
+  sizes measured (below).
+
+### Knuth's two layouts
+
+Knuth's recurrence reads, for interval (i, j), the roots of (i, j − 1) and
+(i + 1, j) and candidate costs C(i, r) + C(r + 1, j). Two changes cut its
+memory by 2.5× and its time by 1.55–2.1× (2.3× for Zipf weights with
+`knuth_scattered`), with the same candidates and result:
+
+- **No root table.** Processing by length, both bounds come from the
+  previous length, so one array of n + 1 roots serves (interval (i, j)
+  overwrites slot i after reading slots i and i + 1). The final tree's roots
+  are recovered afterwards from the costs alone: the root of each of its
+  intervals is the least r with C(i, r) + C(r + 1, j) = C(i, j) − W(i, j),
+  exact in integers, which is the leftmost optimal root the restricted
+  search also settles on (under 1 ms at 16 384).
+- **64-bit costs when they fit.** An interval's optimum is at most its mass
+  times ⌈log₂(n + 1)⌉, so W·(⌈log₂(n + 1)⌉ + 2) < 2⁶³ bounds every cell and
+  candidate sum; otherwise the 128-bit path runs.
+
+These two came from an OpenAI GPT session the owner shared (2026-10-25,
+"retain the cost table, discard root history"); this implementation is
+written here. That session also noted that the diagonal schedule loses at
+6000 keys to a row-by-row one; `knuth_scattered` is that schedule: rows i
+from the last down with j rising, costs stored by column, so each cell's
+right terms C(r + 1, j) are one run of column j beside the cell being
+written and its left terms C(i, r) are the current row in one array.
+
+Interleaved in one process (`research/obst/knuth_layouts.cpp`, Apple clang 21
+-O2, n = 16 384, median of 3, ms; `research/obst/results/2026-10-25-m4-knuth-layouts-16384.csv`):
+
+| family | previous (128-bit, root table, 20 B/cell) | `knuth` (diagonal, 64-bit) | 128-bit diagonal | `knuth_scattered` (64-bit) |
+| --- | ---: | ---: | ---: | ---: |
+| uniform | 1784 | 860 | 1072 | 2060 |
+| zipf | 1372 | 884 | 1027 | 603 |
+| log-normal | 1277 | 815 | 943 | 580 |
+| random | 1484 | 869 | 1103 | 764 |
+| laplacian | 1425 | 683 | 899 | 1176 |
+
+Every variant's cost and tree equal the previous implementation's.
+
+### Measured constructions, all families (Apple M4, Homebrew clang 23.1.2)
+
+`results/2026-10-25-m4-constructions/raw.csv`, `optimal_map_bench construct`,
+median of 3, constructions interleaved. The Mini was shared with another
+session's work during this run, so absolute times are indicative. n = 16 384,
+milliseconds, and cost against Knuth's optimum:
+
+| family | `knuth` | `knuth_scattered` | `garsia_wachs` | `bottom_up` | `weight_balanced` | `balanced` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| uniform | 1176 | 2519 | – | 1, ×1.0000 | 0, ×1.0000 | 0, ×1.0000 |
+| zipf | 883 | 596 | – | 1, ×1.0171 | 0, ×1.2217 | 0, ×1.6535 |
+| log-normal | 1065 | 720 | – | 1, ×1.0107 | 0, ×1.1361 | 0, ×1.3181 |
+| laplacian | 905 | 1349 | – | 1, ×1.0059 | 0, ×1.0024 | 0, ×1.1323 |
+| random | 1093 | 923 | – | 1, ×1.0036 | 0, ×1.0143 | 0, ×1.0168 |
+| gaps only | 1117 | 743 | 122 | 1, ×1.0084 | 0, ×1.0200 | 0, ×1.3839 |
+
+Families as in `construct_weights`: uniform all 1; zipf p = 10⁶/rank + 1
+over a random permutation, q = 1; log-normal p = e^{10+2Z} + 1,
+q = e^{8+2Z} + 1; laplacian p = 10⁹·e^{−|i−n/2|/(n/16)} + 1 with gaps a tenth;
+random p in 1..1000, q in 0..999; gaps only p = 0, q Zipf over a random
+permutation. Every exact construction matched Knuth's cost at 1024, 4096 and
+16 384. Garsia–Wachs's moves were never the bottleneck here; an array-based
+working list is quadratic only on adversarial weights.
+
+### The Monge layers
 
 `monge_layers` is the manuscript's terminal-penalty iteration: H layers
 A_h(i, j) = W(i, j) + min over roots r of A_{h−1}(i, r) + A_{h−1}(r+1, j),
@@ -85,7 +179,12 @@ product spans the diagonal, where the completion P(i − j) makes the
 top-left corner rise and the bottom-right fall with the root, so every root
 is a record at both corners. It costs 1–8% and is off by default.
 
-### Measured construction time (Apple M4, LLVM 23, median of 3)
+### Measured layer construction time (Apple M4, LLVM 23, median of 3)
+
+These were measured against the previous Knuth layout (20 bytes a cell);
+the current `knuth` runs 1.5–2.1× faster than that, so the uniform-weight
+crossover below (n = 16 384) no longer holds, and the layers were not
+re-measured against it beyond 16 384.
 
 `results/2026-10-25-m4-monge-fast/` (current), with the earlier run in
 `results/2026-10-25-m4-monge-revision/` as "before". Weights: uniform (all
@@ -204,9 +303,10 @@ Reading them:
 
 ## Limits and next steps
 
-- Construction for the map at millions of keys uses `weight_balanced`; the
-  exact constructions are practical to a few times 10⁴ keys today (Knuth by
-  memory, the layers by time).
+- Construction for the map at millions of keys should use `bottom_up` (or
+  `weight_balanced`, cheaper and looser); the exact constructions are
+  practical to a few times 10⁴ keys (Knuth by memory, 8 bytes a cell; the
+  layers by time), `garsia_wachs` to millions for gap-only weights.
 - The packing is optimal for the given binary tree, not among multiway
   trees; an exact multiway construction (layers whose step splits an
   interval into up to K + 1 parts) is open.

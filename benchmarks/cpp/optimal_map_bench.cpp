@@ -15,11 +15,12 @@
 //                      balanced static tree gets), find and find_many
 //   optimal_skewed     OptimalMap built for the query weights, find and
 //                      find_many
-// construction is knuth, monge_layers or weight_balanced, for the skewed map.
+// construction names a TreeConstruction (knuth, knuth_scattered, balanced,
+// bottom_up, weight_balanced, ...), for the skewed map.
 //
-// construct: Knuth, the Monge layers in four configurations (penalty or
-// additive base, roots screened or not), weight-balanced and the packing on one weight family
-// (uniform, zipf, random) at the given size, seconds per build.
+// construct: every construction that applies to one weight family
+// (construct_weights) at the given size, seconds per build and cost against
+// Knuth's optimum, and the packing; "layers" adds the Monge layers.
 //
 // One CSV line per measurement: mode, structure, keys, parameter, ns per
 // operation (median over repetitions), min, max, and an extra field.
@@ -42,9 +43,6 @@
 namespace {
 
 using stx_btree::ExactCost;
-using stx_btree::LayerBase;
-using stx_btree::MongeLayerOptions;
-using stx_btree::MongeLayerReport;
 using stx_btree::OptimalMap;
 using stx_btree::OptimalMapPlan;
 using stx_btree::OptimalTreeBuilder;
@@ -157,12 +155,44 @@ std::uint64_t checksum_map_batched(const Map& map, const std::vector<std::uint64
     return sum;
 }
 
-TreeConstruction parse_construction(const char* text) {
-    if (std::strcmp(text, "knuth") == 0) {
-        return TreeConstruction::knuth;
+// A standard normal draw (Box-Muller).
+double standard_normal(Random& random) {
+    const double first = (static_cast<double>(random.next() >> 11) + 0.5) / 9007199254740992.0;
+    const double second = (static_cast<double>(random.next() >> 11) + 0.5) / 9007199254740992.0;
+    return std::sqrt(-2.0 * std::log(first)) * std::cos(6.283185307179586 * second);
+}
+
+const char* construction_name(TreeConstruction construction) {
+    switch (construction) {
+    case TreeConstruction::knuth:
+        return "knuth";
+    case TreeConstruction::knuth_scattered:
+        return "knuth_scattered";
+    case TreeConstruction::garsia_wachs:
+        return "garsia_wachs";
+    case TreeConstruction::balanced:
+        return "balanced";
+    case TreeConstruction::bottom_up:
+        return "bottom_up";
+    case TreeConstruction::weight_balanced:
+        return "weight_balanced";
+    case TreeConstruction::monge_layers:
+        return "monge_layers";
+    case TreeConstruction::monge_additive:
+        return "monge_additive";
     }
-    if (std::strcmp(text, "monge_layers") == 0) {
-        return TreeConstruction::monge_layers;
+    return "unknown";
+}
+
+TreeConstruction parse_construction(const char* text) {
+    const TreeConstruction all[8] = {TreeConstruction::knuth,           TreeConstruction::knuth_scattered, TreeConstruction::garsia_wachs,
+                                     TreeConstruction::balanced,        TreeConstruction::bottom_up,       TreeConstruction::weight_balanced,
+                                     TreeConstruction::monge_layers,    TreeConstruction::monge_additive};
+    std::size_t index = 0;
+    for (index = 0; index < 8; index += 1) {
+        if (std::strcmp(text, construction_name(all[index])) == 0) {
+            return all[index];
+        }
     }
     return TreeConstruction::weight_balanced;
 }
@@ -316,16 +346,58 @@ int run_lookup(std::size_t key_count, double exponent, std::size_t query_count, 
     return 0;
 }
 
-int run_construct(std::size_t key_count, const char* family, std::size_t repetitions) {
+// Weights for the construct mode. Keys and gaps:
+//   uniform     all 1
+//   zipf        p = 10^6 / rank + 1, ranks a random permutation; q = 1
+//   log_normal  p = exp(10 + 2 Z) + 1, q = exp(8 + 2 Z) + 1, Z standard normal
+//   laplacian   p = 10^9 exp(-|i - n/2| / (n/16)) + 1, gaps a tenth of that
+//   random      p in 1..1000, q in 0..999
+//   gaps        p = 0, q = 10^6 / rank + 1 over a random permutation of
+//               ranks (alphabetic-code weights, where Garsia-Wachs applies)
+SearchWeights construct_weights(std::size_t key_count, const char* family) {
     Random random(0xc0457ULL + key_count);
     SearchWeights weights;
     weights.keys.assign(key_count, 1);
     weights.gaps.assign(key_count + 1, 1);
     std::size_t index = 0;
-    if (std::strcmp(family, "zipf") == 0) {
+    if (std::strcmp(family, "zipf") == 0 || std::strcmp(family, "gaps") == 0) {
+        const bool on_gaps = std::strcmp(family, "gaps") == 0;
+        const std::size_t count = on_gaps ? key_count + 1 : key_count;
+        std::vector<std::size_t> rank(count, 0);
+        for (index = 0; index < count; index += 1) {
+            rank[index] = index;
+        }
+        for (index = count; index > 1; index -= 1) {
+            std::swap(rank[index - 1], rank[static_cast<std::size_t>(random.next() % index)]);
+        }
+        for (index = 0; index < count; index += 1) {
+            const SearchWeight weight = static_cast<SearchWeight>(1000000 / (rank[index] + 1)) + 1;
+            if (on_gaps) {
+                weights.gaps[index] = weight;
+            } else {
+                weights.keys[index] = weight;
+            }
+        }
+        if (on_gaps) {
+            weights.keys.assign(key_count, 0);
+        }
+    } else if (std::strcmp(family, "log_normal") == 0) {
         for (index = 0; index < key_count; index += 1) {
-            const std::size_t rank = static_cast<std::size_t>(random.next() % key_count);
-            weights.keys[index] = static_cast<SearchWeight>(1000000 / (rank + 1)) + 1;
+            weights.keys[index] = static_cast<SearchWeight>(std::exp(10.0 + 2.0 * standard_normal(random))) + 1;
+        }
+        for (index = 0; index <= key_count; index += 1) {
+            weights.gaps[index] = static_cast<SearchWeight>(std::exp(8.0 + 2.0 * standard_normal(random))) + 1;
+        }
+    } else if (std::strcmp(family, "laplacian") == 0) {
+        const double centre = static_cast<double>(key_count) / 2.0;
+        const double scale = static_cast<double>(key_count) / 16.0 + 1.0;
+        for (index = 0; index < key_count; index += 1) {
+            const double distance = std::fabs(static_cast<double>(index) - centre);
+            weights.keys[index] = static_cast<SearchWeight>(1.0e9 * std::exp(-distance / scale)) + 1;
+        }
+        for (index = 0; index <= key_count; index += 1) {
+            const double distance = std::fabs(static_cast<double>(index) - 0.5 - centre);
+            weights.gaps[index] = static_cast<SearchWeight>(1.0e8 * std::exp(-distance / scale)) + 1;
         }
     } else if (std::strcmp(family, "random") == 0) {
         for (index = 0; index < key_count; index += 1) {
@@ -335,62 +407,63 @@ int run_construct(std::size_t key_count, const char* family, std::size_t repetit
             weights.gaps[index] = random.next() % 1000;
         }
     }
-    // The Monge configurations measured: base and root screening.
-    const MongeLayerOptions layer_options[4] = {
-        MongeLayerOptions{.base = LayerBase::terminal_penalty, .screen_roots = false},
-        MongeLayerOptions{.base = LayerBase::terminal_penalty, .screen_roots = true},
-        MongeLayerOptions{.base = LayerBase::additive, .screen_roots = false},
-        MongeLayerOptions{.base = LayerBase::additive, .screen_roots = true},
-    };
-    const char* const layer_names[4] = {"monge_penalty", "monge_penalty_screened", "monge_additive", "monge_additive_screened"};
-    std::vector<double> knuth_seconds;
-    std::vector<std::vector<double>> layer_seconds(4);
-    std::vector<double> balanced_seconds;
+    return weights;
+}
+
+int run_construct(std::size_t key_count, const char* family, std::size_t repetitions, bool with_layers) {
+    const SearchWeights weights = construct_weights(key_count, family);
+    bool keys_zero = true;
+    std::size_t index = 0;
+    for (index = 0; index < key_count; index += 1) {
+        keys_zero = keys_zero && weights.keys[index] == 0;
+    }
+    // Every construction that applies to these weights; Knuth's cost is the
+    // optimum the others are measured against.
+    std::vector<TreeConstruction> constructions = {TreeConstruction::knuth, TreeConstruction::knuth_scattered,
+                                                   TreeConstruction::balanced, TreeConstruction::bottom_up,
+                                                   TreeConstruction::weight_balanced};
+    if (keys_zero) {
+        constructions.push_back(TreeConstruction::garsia_wachs);
+    }
+    if (with_layers) {
+        constructions.push_back(TreeConstruction::monge_layers);
+        constructions.push_back(TreeConstruction::monge_additive);
+    }
+    std::vector<std::vector<double>> seconds(constructions.size());
+    std::vector<ExactCost> costs(constructions.size(), 0);
     std::vector<double> packing_seconds;
-    MongeLayerReport reports[4];
-    ExactCost optimal = 0;
-    ExactCost balanced_cost = 0;
     std::size_t repetition = 0;
     for (repetition = 0; repetition < repetitions; repetition += 1) {
-        Clock::time_point start = Clock::now();
-        const SearchTree by_knuth = OptimalTreeBuilder::knuth(weights);
-        knuth_seconds.push_back(seconds_since(start));
-        std::size_t option = 0;
-        for (option = 0; option < 4; option += 1) {
-            start = Clock::now();
-            const SearchTree by_layers = OptimalTreeBuilder::monge_layers(weights, layer_options[option], reports[option]);
-            layer_seconds[option].push_back(seconds_since(start));
-            if (by_knuth.cost != by_layers.cost) {
-                std::fprintf(stderr, "knuth and %s disagree\n", layer_names[option]);
-                return 1;
+        std::size_t step = 0;
+        for (step = 0; step < constructions.size(); step += 1) {
+            // Rotate the order between repetitions.
+            const std::size_t at = (step + repetition) % constructions.size();
+            const Clock::time_point start = Clock::now();
+            const SearchTree tree = OptimalTreeBuilder::build(weights, constructions[at]);
+            seconds[at].push_back(seconds_since(start));
+            costs[at] = tree.cost;
+            if (constructions[at] == TreeConstruction::knuth) {
+                const Clock::time_point packing_start = Clock::now();
+                const stx_btree::detail::PackedTree packed = stx_btree::detail::TreePacker::pack(tree.shape, weights, Map::node_capacity);
+                packing_seconds.push_back(seconds_since(packing_start));
+                (void)packed;
             }
         }
-        start = Clock::now();
-        const SearchTree balanced = OptimalTreeBuilder::weight_balanced(weights);
-        balanced_seconds.push_back(seconds_since(start));
-        start = Clock::now();
-        const stx_btree::detail::PackedTree packed =
-            stx_btree::detail::TreePacker::pack(by_knuth.shape, weights, Map::node_capacity);
-        packing_seconds.push_back(seconds_since(start));
-        optimal = by_knuth.cost;
-        balanced_cost = balanced.cost;
-        (void)packed;
     }
     const std::string parameter(family);
-    char ratio[64];
-    std::snprintf(ratio, sizeof(ratio), "cost_ratio=%.5f", static_cast<double>(balanced_cost) / static_cast<double>(optimal));
+    const ExactCost optimum = costs[0];
     // Seconds, not nanoseconds, for construction lines.
-    print_line("construct", "knuth", key_count, parameter, summarize(knuth_seconds), "");
-    std::size_t option = 0;
-    for (option = 0; option < 4; option += 1) {
-        const MongeLayerReport& report = reports[option];
-        char extra[192];
-        std::snprintf(extra, sizeof(extra), "height_bound=%zu;layers=%zu;fixed_point=%d;largest_core=%zu;witness_slots=%zu",
-                      report.height_bound, report.layers, report.reached_fixed_point ? 1 : 0, report.largest_core,
-                      report.witness_slots);
-        print_line("construct", layer_names[option], key_count, parameter, summarize(layer_seconds[option]), std::string(extra));
+    for (index = 0; index < constructions.size(); index += 1) {
+        char extra[64];
+        std::snprintf(extra, sizeof(extra), "cost_ratio=%.6f", static_cast<double>(costs[index]) / static_cast<double>(optimum));
+        print_line("construct", construction_name(constructions[index]), key_count, parameter, summarize(seconds[index]), std::string(extra));
+        const bool exact = constructions[index] == TreeConstruction::knuth_scattered || constructions[index] == TreeConstruction::garsia_wachs ||
+                           constructions[index] == TreeConstruction::monge_layers || constructions[index] == TreeConstruction::monge_additive;
+        if (exact && costs[index] != optimum) {
+            std::fprintf(stderr, "%s disagrees with knuth\n", construction_name(constructions[index]));
+            return 1;
+        }
     }
-    print_line("construct", "weight_balanced", key_count, parameter, summarize(balanced_seconds), std::string(ratio));
     print_line("construct", "packing", key_count, parameter, summarize(packing_seconds), "");
     return 0;
 }
@@ -409,10 +482,11 @@ int main(int argc, char** argv) {
     if (argc >= 5 && std::strcmp(argv[1], "construct") == 0) {
         const std::size_t key_count = std::strtoull(argv[2], nullptr, 10);
         const std::size_t repetitions = std::strtoull(argv[4], nullptr, 10);
-        return run_construct(key_count, argv[3], repetitions);
+        const bool with_layers = argc >= 6 && std::strcmp(argv[5], "layers") == 0;
+        return run_construct(key_count, argv[3], repetitions, with_layers);
     }
     std::fprintf(stderr,
-                 "usage: optimal_map_bench lookup <keys> <zipf s> <queries> <repetitions> <knuth|monge_layers|weight_balanced> [count layout slack percent]\n"
-                 "       optimal_map_bench construct <keys> <uniform|zipf|random> <repetitions>\n");
+                 "usage: optimal_map_bench lookup <keys> <zipf s> <queries> <repetitions> <construction> [count layout slack percent]\n"
+                 "       optimal_map_bench construct <keys> <uniform|zipf|log_normal|laplacian|random|gaps> <repetitions> [layers]\n");
     return 2;
 }

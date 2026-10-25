@@ -141,17 +141,18 @@ work than bbtree, and a pooled page allocator makes it faster than bbtree at
 
 ## Optimal search trees
 
-Beside the maps, not from bbtree: exact optimal binary search trees for given
-search weights (Knuth's O(n²) construction and the core-sparse Monge layer
-construction of the papers_please `obst` manuscript), and `OptimalMap`, a
-static map that packs a weight-optimal tree into nodes searched the bbtree
-way. At 8M keys under Zipf access (s = 1.0–1.2) it answers lookups 1.5–1.6×
-faster than the unsync map on the M4; at 1M keys it does not help. The layer
-construction, with the published base or Codex Sydney's additive revision,
-beats Knuth's O(n²) construction from n = 16 384 for uniform weights on the M4
-and takes half its time at 24 576 (2.67 s against 5.55 s); for skewed and
-random weights Knuth is still faster at the sizes measured (1.8× and 3.4× at
-24 576), by a ratio that falls with n.
+Beside the maps, not from bbtree: optimal binary search trees for given
+search weights, and `OptimalMap`, a static map that packs a weight-optimal
+tree into nodes searched the bbtree way. At 8M keys under Zipf access
+(s = 1.0–1.2) it answers lookups 1.5–1.6× faster than the unsync map on the
+M4; at 1M keys it does not help. The caller picks the construction by what
+its weights look like: `knuth` (exact, any weights; 8 bytes a cell and
+1.55–2.1× faster than the earlier layout), `knuth_scattered` (the same,
+faster when popularity is scattered over the keys), `garsia_wachs` (exact for
+gap-only weights, linear memory), `balanced` (exact for constant weights),
+`bottom_up` (within 1.7% of optimal in about a thousandth of Knuth's time at
+16 384 keys), `weight_balanced`, and the core-sparse Monge layers of the
+papers_please `obst` manuscript.
 [Optimal trees](docs/OPTIMAL_TREES.md) has the design, the checks and the
 numbers.
 

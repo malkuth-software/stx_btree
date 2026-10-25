@@ -234,6 +234,71 @@ void expect_valid(const SearchTree& tree, const SearchWeights& weights, const ch
     TestFailure::expect(own == tree.cost, label, "reported cost differs from the tree's cost");
 }
 
+[[nodiscard]] bool same_shape(const BinaryTreeShape& first, const BinaryTreeShape& second) {
+    return first.root == second.root && first.left == second.left && first.right == second.right;
+}
+
+[[nodiscard]] bool all_keys_zero(const SearchWeights& weights) {
+    std::size_t key = 0;
+    for (key = 0; key < weights.keys.size(); key += 1) {
+        if (weights.keys[key] != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+[[nodiscard]] bool constant_weights(const SearchWeights& weights) {
+    std::size_t index = 0;
+    for (index = 1; index < weights.keys.size(); index += 1) {
+        if (weights.keys[index] != weights.keys[0]) {
+            return false;
+        }
+    }
+    for (index = 1; index < weights.gaps.size(); index += 1) {
+        if (weights.gaps[index] != weights.gaps[0]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Every construction but Knuth's own and the Monge layers on these weights,
+// against the optimum: the scattered Knuth exact and with Knuth's tree,
+// Garsia-Wachs exact on gap-only weights and refusing others, the balanced
+// tree exact on constant weights, the approximations valid and no cheaper.
+void expect_other_constructions(const SearchWeights& weights, const SearchTree& by_knuth, ExactCost optimum, const char* label) {
+    const SearchTree scattered = OptimalTreeBuilder::knuth_scattered(weights);
+    expect_valid(scattered, weights, "knuth_scattered");
+    TestFailure::expect(scattered.cost == optimum, label, "knuth_scattered not optimal");
+    TestFailure::expect(same_shape(scattered.shape, by_knuth.shape), label, "knuth_scattered tree differs from knuth's");
+    if (all_keys_zero(weights)) {
+        const SearchTree alphabetic = OptimalTreeBuilder::garsia_wachs(weights);
+        expect_valid(alphabetic, weights, "garsia_wachs");
+        TestFailure::expect(alphabetic.cost == optimum, label, "garsia_wachs not optimal");
+    } else {
+        bool threw = false;
+        try {
+            const SearchTree unused = OptimalTreeBuilder::garsia_wachs(weights);
+            (void)unused;
+        } catch (const std::invalid_argument&) {
+            threw = true;
+        }
+        TestFailure::expect(threw, label, "garsia_wachs accepted key weights");
+    }
+    const SearchTree balanced = OptimalTreeBuilder::balanced(weights);
+    expect_valid(balanced, weights, "balanced");
+    TestFailure::expect(balanced.cost >= optimum, label, "balanced below the optimum");
+    if (constant_weights(weights)) {
+        TestFailure::expect(balanced.cost == optimum, label, "balanced not optimal on constant weights");
+    }
+    const SearchTree joined = OptimalTreeBuilder::bottom_up(weights);
+    expect_valid(joined, weights, "bottom_up");
+    TestFailure::expect(joined.cost >= optimum, label, "bottom_up below the optimum");
+    const SearchTree bisected = OptimalTreeBuilder::weight_balanced(weights);
+    expect_valid(bisected, weights, "weight_balanced");
+    TestFailure::expect(bisected.cost >= optimum, label, "weight_balanced below the optimum");
+}
 
 constexpr MongeLayerOptions all_layer_options[] = {
     MongeLayerOptions{.base = LayerBase::terminal_penalty, .screen_roots = true},
@@ -272,9 +337,7 @@ void check_against_enumeration(SplitMix64& random) {
                 expect_valid(by_knuth, weights, "knuth small");
                 TestFailure::expect(by_knuth.cost == exhaustive, "knuth small", "not optimal");
                 expect_every_layer_option(weights, exhaustive);
-                const SearchTree balanced = OptimalTreeBuilder::weight_balanced(weights);
-                expect_valid(balanced, weights, "balanced small");
-                TestFailure::expect(balanced.cost >= exhaustive, "balanced small", "below the optimum");
+                expect_other_constructions(weights, by_knuth, exhaustive, "small");
                 checked += 1;
             }
         }
@@ -294,6 +357,7 @@ void check_against_cubic(SplitMix64& random) {
             expect_valid(by_knuth, weights, "knuth");
             TestFailure::expect(by_knuth.cost == cubic, "knuth", "not optimal");
             expect_every_layer_option(weights, cubic);
+            expect_other_constructions(weights, by_knuth, cubic, "cubic");
             checked += 1;
         }
     }
@@ -308,6 +372,7 @@ void check_larger(SplitMix64& random) {
         const SearchTree by_knuth = OptimalTreeBuilder::knuth(weights);
         expect_valid(by_knuth, weights, "knuth large");
         expect_every_layer_option(weights, by_knuth.cost);
+        expect_other_constructions(weights, by_knuth, by_knuth.cost, "large");
         checked += 1;
     }
     std::printf("knuth/monge: %zu instances, 600 <= n < 1200\n", checked);
@@ -347,6 +412,64 @@ void check_edges() {
     const SearchTree heavy_knuth = OptimalTreeBuilder::knuth(heavy);
     expect_every_layer_option(heavy, heavy_knuth.cost);
     expect_every_layer_option(zeros, 0);
+    // These weights take the 128-bit Knuth path; the cubic reference agrees.
+    TestFailure::expect(heavy_knuth.cost == CubicReference::optimal_cost(heavy), "edges", "128-bit knuth not optimal");
+    expect_other_constructions(heavy, heavy_knuth, heavy_knuth.cost, "heavy");
+    SearchWeights heavy_gaps;
+    heavy_gaps.keys.assign(40, 0);
+    heavy_gaps.gaps.assign(41, ~static_cast<SearchWeight>(0));
+    heavy_gaps.gaps[7] = 3;
+    const SearchTree heavy_gaps_knuth = OptimalTreeBuilder::knuth(heavy_gaps);
+    TestFailure::expect(heavy_gaps_knuth.cost == CubicReference::optimal_cost(heavy_gaps), "edges", "128-bit knuth, gaps");
+    expect_other_constructions(heavy_gaps, heavy_gaps_knuth, heavy_gaps_knuth.cost, "heavy gaps");
+    expect_other_constructions(zeros, OptimalTreeBuilder::knuth(zeros), 0, "zeros");
+
+    TestFailure::expect(OptimalTreeBuilder::knuth_scattered(empty).cost == 0, "edges", "empty knuth_scattered");
+    TestFailure::expect(OptimalTreeBuilder::garsia_wachs(empty).shape.root == no_key, "edges", "empty garsia_wachs");
+    TestFailure::expect(OptimalTreeBuilder::balanced(empty).shape.root == no_key, "edges", "empty balanced");
+    TestFailure::expect(OptimalTreeBuilder::bottom_up(empty).shape.root == no_key, "edges", "empty bottom_up");
+
+    // Constant weights other than one: the balanced tree is optimal.
+    SearchWeights constant;
+    constant.keys.assign(37, 3);
+    constant.gaps.assign(38, 5);
+    expect_other_constructions(constant, OptimalTreeBuilder::knuth(constant), OptimalTreeBuilder::knuth(constant).cost, "constant");
+}
+
+// Garsia-Wachs at sizes the enumeration and cubic checks do not reach, on
+// gap weights with zeros, ties and wide ranges, against Knuth.
+void check_garsia_wachs(SplitMix64& random) {
+    std::size_t checked = 0;
+    std::size_t trial = 0;
+    for (trial = 0; trial < 24; trial += 1) {
+        const std::size_t key_count = 200 + static_cast<std::size_t>(random.below(1400));
+        SearchWeights weights;
+        weights.keys.assign(key_count, 0);
+        weights.gaps.assign(key_count + 1, 0);
+        std::size_t gap = 0;
+        for (gap = 0; gap <= key_count; gap += 1) {
+            switch (trial % 4) {
+            case 0:
+                weights.gaps[gap] = random.below(4);
+                break;
+            case 1:
+                weights.gaps[gap] = random.below(static_cast<SearchWeight>(1) << 40);
+                break;
+            case 2:
+                weights.gaps[gap] = static_cast<SearchWeight>(1000000 / (1 + random.below(key_count)));
+                break;
+            default:
+                weights.gaps[gap] = gap < key_count / 2 ? gap + 1 : key_count - gap + 1;
+                break;
+            }
+        }
+        const SearchTree by_knuth = OptimalTreeBuilder::knuth(weights);
+        const SearchTree alphabetic = OptimalTreeBuilder::garsia_wachs(weights);
+        expect_valid(alphabetic, weights, "garsia_wachs large");
+        TestFailure::expect(alphabetic.cost == by_knuth.cost, "garsia_wachs large", "not optimal");
+        checked += 1;
+    }
+    std::printf("garsia_wachs: %zu gap-only instances, 200 <= n < 1600\n", checked);
 }
 
 } // namespace
@@ -357,6 +480,7 @@ int main() {
     check_against_enumeration(random);
     check_against_cubic(random);
     check_larger(random);
+    check_garsia_wachs(random);
     std::printf("optimal tree tests passed\n");
     return 0;
 }

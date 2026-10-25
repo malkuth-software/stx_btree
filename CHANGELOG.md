@@ -29,4 +29,11 @@ First C++ form of bbtree 0.1.5 (upstream commit 8adae97).
   `MongeLayerOptions` (base, two-corner root screening).
 - `PooledPageAllocator` (`pooled_page_allocator.hpp`) for both maps, and the
   `stx_btree_bench_pooled` build of the bench.
+- `knuth` keeps one diagonal of roots instead of a root table, recovers the
+  final tree's roots from the costs, and stores 64-bit costs when they fit:
+  8 bytes a cell instead of 20, 1.55–2.1× faster on the M4 at 16 384 keys.
+- `TreeConstruction::knuth_scattered` (rows by column-major costs, for
+  popularity scattered over the keys), `garsia_wachs` (gap-only weights),
+  `balanced` (constant weights) and `bottom_up` (near-optimal); the
+  `construct` benchmark covers log-normal, Laplacian and gap-only weights.
 - Not a stable ABI or memory format.

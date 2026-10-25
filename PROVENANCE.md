@@ -99,4 +99,10 @@ The additive layer base (`LayerBase::additive`, `monge_additive`) and the
 two-corner root screening (`MongeLayerOptions::screen_roots`) implement
 research notes by Codex Sydney (2026-10-25), shared in this project's
 session; their proofs are Sydney's and under review.
+Knuth's single-diagonal root array, root recovery from the cost table and
+64-bit cost storage follow suggestions from an OpenAI GPT session the owner
+shared (2026-10-25); the row-by-row, column-major layout (`knuth_scattered`)
+follows its note that a row schedule wins at larger n. The code is written
+here. Garsia–Wachs (1977) is the standard algorithm (Knuth, TAOCP 6.2.2).
+`bottom_up` comes from this project's research (research/obst/NOTES.md).
 [docs/OPTIMAL_TREES.md](docs/OPTIMAL_TREES.md) has the design and measurements.
