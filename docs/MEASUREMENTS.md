@@ -187,6 +187,17 @@ forwarding in the shifts, or similar), and it needs hardware counters on a
 machine that allows them. Independently, a pooled page allocator is a
 measured gain on Linux for both lookups and writes.
 
+### Pooled page allocator, M4, 2026-10-25
+
+`stx_btree_bench` and `stx_btree_bench_pooled` (the same source on
+`PooledPageAllocator`) beside bbtree, interleaved, three repetitions, LLVM 23,
+`results/2026-10-25-m4-pooled/raw.csv`. On macOS the pool is neutral: every
+cell is within 3% of the default allocator (unsync u64 10M: inserts 164.3 and
+164.4 ns, removes 231.2 and 226.5 ns; shared u64 10M lookups 98.7 and
+96.9 ns). The Linux run of the library allocator waits for the pod
+(`benchmarks/pod/diagnose_writes.sh`, builds `gcc_pooled` and
+`clang_pooled`).
+
 ## Reproduce on the Mac mini
 
 ```sh

@@ -81,6 +81,26 @@ Keys need an `InlineKeyTraits` specialization. `std::uint64_t`,
 `std::string_view`) are provided; [the design notes](docs/DESIGN.md#keys)
 show how to add a key type.
 
+### Pooled pages
+
+Both maps take a page allocator as their last template argument. The
+default, `GlobalPageAllocator`, asks the system for every node page.
+`PooledPageAllocator` (`stx_btree/pooled_page_allocator.hpp`) carves pages in
+address order from chunks of up to 2 MiB and reuses freed pages; its pool is
+shared by copies of the allocator and lives until the last one goes, and
+pages go back to the system only then.
+
+```cpp
+#include "stx_btree/pooled_page_allocator.hpp"
+
+stx_btree::BBTreeMap<std::uint64_t, std::uint64_t, stx_btree::PooledPageAllocator> map;
+```
+
+On macOS it measured the same as the default (within 3%, M4). On Linux,
+where glibc spaces aligned 1 KiB pages apart, packing the pages took the
+unsync map's 1M-entry inserts from 1.33× to 0.94× bbtree's time in a bench
+experiment; the library allocator's own run on Linux is still to come.
+
 ## Build
 
 C++20 and CMake 3.21 or later; no dependencies. The library is header-only.

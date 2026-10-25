@@ -11,10 +11,8 @@
 // operations, nanoseconds per operation, checksum. Checksums equal the Rust
 // program's for the same arguments.
 
-#if defined(STX_BTREE_BENCH_ARENA)
-#include "../pod/arena_page_allocator.hpp"
-#endif
 #include "stx_btree/bbtree_map.hpp"
+#include "stx_btree/pooled_page_allocator.hpp"
 #include "stx_btree/unsync_map.hpp"
 #include "workload.hpp"
 
@@ -107,20 +105,20 @@ struct UrlKeys final {
     }
 };
 
-// The unsync map's page allocator: the library's default, or with
-// -DSTX_BTREE_BENCH_ARENA the pooled arena of benchmarks/pod (an experiment
-// on the cost of the system allocator; never the reported default).
-#if defined(STX_BTREE_BENCH_ARENA)
-using UnsyncPageAllocator = stx_btree_bench::ArenaPageAllocator;
+// The maps' page allocator: the library's default, or with
+// -DSTX_BTREE_BENCH_POOLED the pooled one (pooled_page_allocator.hpp). Reports
+// say which in their build, not in each line.
+#if defined(STX_BTREE_BENCH_POOLED)
+using BenchPageAllocator = stx_btree::PooledPageAllocator;
 #else
-using UnsyncPageAllocator = stx_btree::GlobalPageAllocator;
+using BenchPageAllocator = stx_btree::GlobalPageAllocator;
 #endif
 
 template <typename Family>
 class UnsyncBench final {
 public:
     using Key = typename Family::Key;
-    using Map = stx_btree::unsync::BBTreeMap<Key, std::uint64_t, UnsyncPageAllocator>;
+    using Map = stx_btree::unsync::BBTreeMap<Key, std::uint64_t, BenchPageAllocator>;
     using Traits = stx_btree::InlineKeyTraits<Key>;
 
     static void run(std::uint64_t size, std::uint64_t operations) {
@@ -278,7 +276,7 @@ template <typename Family>
 class SharedBench final {
 public:
     using Key = typename Family::Key;
-    using Map = stx_btree::BBTreeMap<Key, std::uint64_t>;
+    using Map = stx_btree::BBTreeMap<Key, std::uint64_t, BenchPageAllocator>;
     using Traits = stx_btree::InlineKeyTraits<Key>;
     using Query = typename Traits::Query;
     static constexpr std::size_t batch = 64;

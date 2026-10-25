@@ -12,6 +12,7 @@ the source cites its decisions as Dnn.
 | --- | --- |
 | `inline_key.hpp` | `InlineKeyTraits<K>`: a key's encoding, windows, comparisons from a known equal length, hash tags, shared-prefix checks; `ByteEncoding`, `InlineKeyWindows` |
 | `page_allocator.hpp` | `GlobalPageAllocator`: zeroed, size-aligned pages, `std::bad_alloc` on failure |
+| `pooled_page_allocator.hpp` | `PooledPageAllocator`, `PagePool`: pages carved in address order from shared, growing chunks, reused when freed |
 | `detail/node_layout.hpp` | compile-time page layouts (D13, D15, D21, D29, D34, D36, D49) |
 | `detail/vector_count.hpp` | the node search: count below and equal over every slot (D56) |
 | `detail/node.hpp` | `TreeShape` (the node plan, D47), `LeafNode`, `InternalNode`, `Window`, tagged `NodePointer` |
@@ -162,3 +163,22 @@ both maps take every page a change needs before changing anything, so the
 map is unchanged when it is thrown. A broken invariant that would make a
 count wrap (an empty leaf right of a separator) aborts, as bbtree's
 `expect` panics.
+
+## Pooled pages
+
+bbtree's `Allocator` trait pools pages by kind as an option (D8); its maps
+default to the global allocator, as this form's do. `PooledPageAllocator` is
+that option. Each size class carves pages from chunks that double from
+64 KiB to 2 MiB, in address order, and keeps freed pages on an intrusive
+list; chunks go back to the system when the pool ends. The pool is a
+`std::shared_ptr` shared by allocator copies, so a map owns its pool and maps
+built from one allocator share it; the allocator has no move constructor, so
+a moved-from map keeps a usable pool. A mutex guards the pool: the shared
+map allocates only when its own type-stable free lists are empty (D54), about
+once per leaf split, and gives pages back only when it is destroyed.
+
+The reason is measured, not inherited: on Linux x86-64 glibc's aligned path
+placed 744 407 1 KiB pages over 1.55 GB for 0.76 GB of pages, for this form
+and for bbtree alike, and packed pages (a bench-only arena of the same design) made this form's operations
+7–52% faster there (docs/MEASUREMENTS.md, "Writes"). On macOS the system
+allocator already packs them; the pool measured the same as the default.

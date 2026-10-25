@@ -9,6 +9,7 @@
 //   stx_btree_stress_test [seconds per shape]   (default 2)
 
 #include "stx_btree/bbtree_map.hpp"
+#include "stx_btree/pooled_page_allocator.hpp"
 #include "test_support.hpp"
 #include "tree_invariants.hpp"
 
@@ -54,6 +55,7 @@ struct Payload final {
 };
 
 using PayloadMap = stx_btree::BBTreeMap<std::uint64_t, Payload>;
+using PooledPayloadMap = stx_btree::BBTreeMap<std::uint64_t, Payload, stx_btree::PooledPageAllocator>;
 
 struct RewritePayload final {
     void operator()(const std::uint64_t& key, Payload& value) const noexcept {
@@ -87,8 +89,9 @@ struct OrderedScan final {
 
 enum class Role : std::uint8_t { churn, read, scan };
 
+template <typename Map>
 struct StressThread final {
-    PayloadMap* map = nullptr;
+    Map* map = nullptr;
     Role role = Role::churn;
     std::uint64_t key_space = 0;
     std::uint64_t seed = 0;
@@ -117,7 +120,7 @@ struct StressThread final {
         if (choice < 5) {
             (*map).insert(key, Payload::of(key));
         } else if (choice < 9) {
-            const std::optional<PayloadMap::Entry> removed = (*map).remove(key);
+            const std::optional<typename Map::Entry> removed = (*map).remove(key);
             if (removed.has_value()) {
                 TestFailure::expect((*removed).key == key && (*removed).value.belongs_to(key), "stress", "a removed entry is whole");
             }
@@ -153,8 +156,8 @@ struct StressThread final {
     void scan(SplitMix64& random, std::uint64_t key) const {
         const bool ascending = random.below(2) == 0;
         OrderedScan visitor{ascending, false, 0, 0};
-        const PayloadMap::Bound bound{&key, random.below(2) == 0};
-        const PayloadMap::Bound unbounded{nullptr, true};
+        const typename Map::Bound bound{&key, random.below(2) == 0};
+        const typename Map::Bound unbounded{nullptr, true};
         if (ascending) {
             (*map).scan(bound, unbounded, visitor);
         } else {
@@ -171,8 +174,9 @@ struct CountAll final {
     }
 };
 
+template <typename Map>
 void run_shape(const char* label, std::uint64_t key_space, double seconds) {
-    PayloadMap map;
+    Map map;
     std::atomic<bool> stop{false};
     std::atomic<std::uint64_t> operations{0};
     const Role roles[10] = {Role::churn, Role::churn, Role::churn, Role::churn, Role::read,
@@ -180,7 +184,7 @@ void run_shape(const char* label, std::uint64_t key_space, double seconds) {
     std::vector<std::thread> threads;
     std::size_t index = 0;
     for (index = 0; index < 10; index += 1) {
-        threads.emplace_back(StressThread{&map, roles[index], key_space, 1000 + index, &stop, &operations});
+        threads.emplace_back(StressThread<Map>{&map, roles[index], key_space, 1000 + index, &stop, &operations});
     }
     const std::chrono::duration<double> duration(seconds);
     std::this_thread::sleep_for(duration);
@@ -190,8 +194,8 @@ void run_shape(const char* label, std::uint64_t key_space, double seconds) {
     }
     std::size_t total = 0;
     map.for_each_mut(CountAll{&total});
-    stx_btree_tests::TreeInvariants<PayloadMap::Shape> invariants;
-    const stx_btree_tests::TreeInvariants<PayloadMap::Shape>::Report report =
+    stx_btree_tests::TreeInvariants<typename Map::Shape> invariants;
+    const typename stx_btree_tests::TreeInvariants<typename Map::Shape>::Report report =
         invariants.check(map.tree_for_inspection().load_root(), total);
     TestFailure::expect(report.inexact_prefixes == 0, label, "prefixes are exact after the run");
     std::printf("%-28s ok: %llu operations, %zu entries, %zu internal nodes at the end\n", label,
@@ -202,9 +206,11 @@ void run_shape(const char* label, std::uint64_t key_space, double seconds) {
 
 int main(int argument_count, char** arguments) {
     const double seconds = argument_count > 1 ? std::atof(arguments[1]) : 2.0;
-    run_shape("stress, about one leaf", 24, seconds);
-    run_shape("stress, two levels", 3000, seconds);
-    run_shape("stress, deep 12-entry leaves", 200000, seconds);
+    run_shape<PayloadMap>("stress, about one leaf", 24, seconds);
+    run_shape<PayloadMap>("stress, two levels", 3000, seconds);
+    run_shape<PayloadMap>("stress, deep 12-entry leaves", 200000, seconds);
+    run_shape<PooledPayloadMap>("stress pooled, about one leaf", 24, seconds);
+    run_shape<PooledPayloadMap>("stress pooled, deep leaves", 200000, seconds);
     std::printf("stress tests passed\n");
     return 0;
 }

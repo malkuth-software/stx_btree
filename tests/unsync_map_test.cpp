@@ -2,6 +2,7 @@
 // the full structural invariant check after every phase (bbtree's
 // unsync/map/tests/differential.rs in spirit).
 
+#include "stx_btree/pooled_page_allocator.hpp"
 #include "stx_btree/unsync_map.hpp"
 #include "test_support.hpp"
 #include "tree_invariants.hpp"
@@ -22,10 +23,10 @@ using stx_btree_tests::KeyMaker;
 using stx_btree_tests::SplitMix64;
 using stx_btree_tests::TestFailure;
 
-template <typename Key, typename Value>
+template <typename Key, typename Value, typename Allocator = stx_btree::GlobalPageAllocator>
 class Differential final {
 public:
-    using Map = stx_btree::unsync::BBTreeMap<Key, Value>;
+    using Map = stx_btree::unsync::BBTreeMap<Key, Value, Allocator>;
     using Reference = std::map<Key, Value>;
     using Traits = stx_btree::InlineKeyTraits<Key>;
     using Shape = typename Map::Shape;
@@ -139,9 +140,9 @@ public:
     const char* label = "";
 };
 
-template <typename Key, typename Value>
+template <typename Key, typename Value, typename Allocator = stx_btree::GlobalPageAllocator>
 void run_random(const char* label, std::uint64_t seed, std::size_t operations, std::size_t key_space) {
-    Differential<Key, Value> test(label);
+    Differential<Key, Value, Allocator> test(label);
     SplitMix64 random(seed);
     KeyMaker<Key> keys(seed ^ 0x5eed);
     KeyMaker<Value> values(seed ^ 0xa11);
@@ -188,9 +189,9 @@ void run_random(const char* label, std::uint64_t seed, std::size_t operations, s
     std::printf("%-18s largest tree: %zu internal nodes\n", label, test.largest_internal_count);
 }
 
-template <typename Key, typename Value>
+template <typename Key, typename Value, typename Allocator = stx_btree::GlobalPageAllocator>
 void run_ordered(const char* label, std::size_t count, bool ascending) {
-    Differential<Key, Value> test(label);
+    Differential<Key, Value, Allocator> test(label);
     KeyMaker<Key> keys(7);
     KeyMaker<Value> values(9);
     std::size_t step = 0;
@@ -255,6 +256,45 @@ void run_insert_many(const char* label, std::uint64_t seed, bool base_shares_pre
 
 } // namespace
 
+
+// Maps on one shared pool: pages carve in order, freed pages come back for
+// reuse, every page is given back by the time the maps are gone.
+void run_shared_pool() {
+    using Pooled = stx_btree::PooledPageAllocator;
+    using PooledMap = stx_btree::unsync::BBTreeMap<std::uint64_t, std::uint64_t, Pooled>;
+    std::shared_ptr<stx_btree::PagePool> pool = std::make_shared<stx_btree::PagePool>();
+    {
+        PooledMap first{Pooled(pool)};
+        PooledMap second{Pooled(pool)};
+        std::uint64_t index = 0;
+        for (index = 0; index < 100000; index += 1) {
+            first.insert(SplitMix64::mix(index), index);
+            second.insert(index, index);
+        }
+        const stx_btree::PagePool::Usage grown = (*pool).usage();
+        TestFailure::expect(grown.pages_out > 2000 && grown.pages_free == 0, "shared pool", "pages carved");
+        for (index = 0; index < 100000; index += 1) {
+            const std::optional<PooledMap::Entry> removed = first.remove(SplitMix64::mix(index));
+            TestFailure::expect(removed.has_value() && (*removed).value == index, "shared pool", "remove");
+        }
+        const stx_btree::PagePool::Usage drained = (*pool).usage();
+        TestFailure::expect(drained.pages_free > 0 && drained.pages_out < grown.pages_out, "shared pool", "pages returned");
+        for (index = 0; index < 100000; index += 1) {
+            first.insert(SplitMix64::mix(index) ^ 1, index);
+        }
+        const stx_btree::PagePool::Usage regrown = (*pool).usage();
+        TestFailure::expect(regrown.chunk_bytes <= grown.chunk_bytes + stx_btree::PagePool::largest_chunk_bytes * 3,
+                            "shared pool", "freed pages reused");
+        PooledMap moved = std::move(second);
+        TestFailure::expect(moved.size() == 100000 && moved.find(77) != nullptr, "shared pool", "moved map");
+        second.insert(5, 5);
+        TestFailure::expect(second.find(5) != nullptr, "shared pool", "moved-from map still allocates");
+    }
+    const stx_btree::PagePool::Usage after = (*pool).usage();
+    TestFailure::expect(after.pages_out == 0, "shared pool", "every page given back");
+    std::printf("%-18s ok\n", "shared pool");
+}
+
 int main() {
     run_random<std::uint64_t, std::uint64_t>("u64 random", 1, 200000, 50000);
     run_random<std::uint64_t, std::uint64_t>("u64 dense", 2, 200000, 3000);
@@ -271,6 +311,11 @@ int main() {
     run_ordered<std::uint64_t, std::uint64_t>("u64 descending", 100000, false);
     run_ordered<std::string, std::uint64_t>("string ascending", 60000, true);
     run_ordered<std::array<std::uint8_t, 16>, std::uint64_t>("uuid ascending", 60000, true);
+    run_random<std::uint64_t, std::uint64_t, stx_btree::PooledPageAllocator>("pooled u64", 21, 200000, 50000);
+    run_random<std::string, std::string, stx_btree::PooledPageAllocator>("pooled str to str", 22, 80000, 15000);
+    run_random<std::uint64_t, std::array<std::uint8_t, 80>, stx_btree::PooledPageAllocator>("pooled u64 to 80B", 23, 200000, 80000);
+    run_ordered<std::uint64_t, std::uint64_t, stx_btree::PooledPageAllocator>("pooled ascending", 100000, true);
+    run_shared_pool();
     run_insert_many<std::uint64_t>("u64 batches", 21, false);
     run_insert_many<std::string>("string batches", 22, false);
     run_insert_many<std::uint64_t>("u64 prefix batches", 23, true);

@@ -2,7 +2,7 @@
 # Diagnosis job for the x86-64 write gap (inserts and removes 1.4-1.7x
 # bbtree's time with GCC and Clang; at parity on the M4). Builds the bench
 # with each compiler twice: with the library's page allocator, and with the
-# pooled arena of benchmarks/pod/arena_page_allocator.hpp, which isolates the
+# library's PooledPageAllocator (pooled_page_allocator.hpp), which isolates the
 # system allocator's aligned allocations and page placement. Tries perf stat
 # from Ubuntu's linux-tools if the kernel allows it. Submitted by
 # tools/prepare_pod_job.sh with this script as run.sh.
@@ -56,9 +56,9 @@ build_bench() {
     LD_LIBRARY_PATH="$clang_libraries" cmake --build ".build/$name" --parallel 4 --target stx_btree_bench > "$out/build-$name.log" 2>&1
 }
 build_bench gcc g++ "-march=native"
-build_bench gcc_arena g++ "-march=native -DSTX_BTREE_BENCH_ARENA"
+build_bench gcc_pooled g++ "-march=native -DSTX_BTREE_BENCH_POOLED"
 build_bench clang "$clang" "-march=native"
-build_bench clang_arena "$clang" "-march=native -DSTX_BTREE_BENCH_ARENA"
+build_bench clang_pooled "$clang" "-march=native -DSTX_BTREE_BENCH_POOLED"
 (cd benchmarks/rust && RUSTFLAGS="-C target-cpu=native" CARGO_TARGET_DIR="$job/stx_btree/.build/rust-bench" \
     cargo build --release --offline --locked 2>&1 | tail -1)
 rust="$job/stx_btree/.build/rust-bench/release/bbtree-reference-bench"
@@ -66,9 +66,9 @@ rust="$job/stx_btree/.build/rust-bench/release/bbtree-reference-bench"
 echo "== interleaved cells"
 raw="$out/raw.csv"
 echo "build,implementation,map,key,size,threads,workload,operations,ns_per_op,checksum,repetition" > "$raw"
-for cell in "unsync u64 10000000" "unsync u64 1000000" "unsync str16 1000000"; do
+for cell in "unsync u64 10000000" "unsync u64 1000000" "unsync str16 1000000" "shared u64 10000000" "shared str16 1000000"; do
     for repetition in 1 2 3; do
-        for build in gcc gcc_arena clang clang_arena rust; do
+        for build in gcc gcc_pooled clang clang_pooled rust; do
             program="./.build/$build/stx_btree_bench"
             if [ "$build" = rust ]; then
                 program="$rust"
@@ -81,7 +81,7 @@ done
 
 if [ -n "$perf" ]; then
     echo "== perf stat (whole process, unsync u64 10M)"
-    for build in clang clang_arena rust; do
+    for build in clang clang_pooled rust; do
         program="./.build/$build/stx_btree_bench"
         if [ "$build" = rust ]; then
             program="$rust"

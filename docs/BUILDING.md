@@ -24,7 +24,7 @@ Options:
 | Option | Default | Effect |
 | --- | --- | --- |
 | `STX_BTREE_BUILD_TESTS` | on at top level | the tests and example |
-| `STX_BTREE_BUILD_BENCHMARKS` | on at top level | `stx_btree_bench`, `stx_btree_optimal_map_bench` |
+| `STX_BTREE_BUILD_BENCHMARKS` | on at top level | `stx_btree_bench`, `stx_btree_bench_pooled` (on `PooledPageAllocator`), `stx_btree_optimal_map_bench` |
 | `STX_BTREE_SANITIZE` | off | ASan and UBSan, no recovery |
 | `STX_BTREE_WARNINGS_AS_ERRORS` | on | `-Werror` on the repository's own programs |
 

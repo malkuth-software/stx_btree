@@ -8,6 +8,7 @@
 // other threads append.
 
 #include "stx_btree/bbtree_map.hpp"
+#include "stx_btree/pooled_page_allocator.hpp"
 #include "test_support.hpp"
 #include "tree_invariants.hpp"
 
@@ -69,10 +70,10 @@ struct VisitAll final {
     }
 };
 
-template <typename Key>
+template <typename Key, typename Allocator = stx_btree::GlobalPageAllocator>
 class SingleThread final {
 public:
-    using Map = stx_btree::BBTreeMap<Key, std::uint64_t>;
+    using Map = stx_btree::BBTreeMap<Key, std::uint64_t, Allocator>;
     using Traits = stx_btree::InlineKeyTraits<Key>;
     using Query = typename Traits::Query;
     using Reference = std::map<Key, std::uint64_t>;
@@ -575,9 +576,9 @@ void string_prefixes_under_appends() {
 // Batched inserts against inserts one at a time, single-threaded, past the
 // three-level batch threshold; then threads batching their own keys while
 // others look them up.
-template <typename Key>
+template <typename Key, typename Allocator = stx_btree::GlobalPageAllocator>
 void shared_insert_many(const char* label, std::uint64_t seed, bool base_shares_prefix) {
-    using Map = stx_btree::BBTreeMap<Key, std::uint64_t>;
+    using Map = stx_btree::BBTreeMap<Key, std::uint64_t, Allocator>;
     Map map;
     std::map<Key, std::uint64_t> reference;
     SplitMix64 random(seed);
@@ -703,6 +704,9 @@ int main() {
     shared_insert_many<std::uint64_t>("shared batches, prefix", 43, true);
     shared_insert_many<std::string>("shared batches, str prefix", 44, true);
     batch_writers_and_readers();
+    SingleThread<std::uint64_t, stx_btree::PooledPageAllocator>::run("pooled shared u64", 51, 200000, 40000);
+    SingleThread<std::string, stx_btree::PooledPageAllocator>::run("pooled shared string", 52, 150000, 30000);
+    shared_insert_many<std::uint64_t, stx_btree::PooledPageAllocator>("pooled shared batches", 53, false);
     std::printf("shared map tests passed\n");
     return 0;
 }
