@@ -104,10 +104,11 @@ Measured on an Apple M4 (Mac mini) with Homebrew LLVM 23 and nightly Rust,
 both at `-mcpu`/`target-cpu=native`, both on the system allocator, with
 identical keys, queries and checksums: see
 [measurements](docs/MEASUREMENTS.md) for every cell, its spread and the
-method. In short, the C++ form tracks bbtree closely: point lookups, inserts
-and removals are mostly within a few percent of the Rust crate, single-thread
-scans and iteration are faster, and the remaining gaps (appends, the shared
-map's batched inserts) are listed there.
+method. In short, at 1M entries the C++ form tracks bbtree closely (most cells
+within ±10%, with string removals, scans and iteration faster in C++); the
+shared map at 10M integer keys is 10–27% behind and is the main open gap,
+alongside appends and the shared map's batched inserts. The figures so far
+come from a partial single-repetition run; a full matrix is queued.
 
 ## Scope
 
