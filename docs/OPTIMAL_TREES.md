@@ -3,22 +3,24 @@
 Two pieces, not from bbtree, built beside the maps:
 
 1. **Optimal binary search trees** for given search weights
-   (`search_weights.hpp`, `optimal_tree.hpp`, `detail/monge_product.hpp`):
-   Knuth's O(n²) construction in two memory layouts, Garsia–Wachs for
-   gap-only weights, the balanced tree for constant weights, the
-   manuscript's core-sparse Monge construction, and two near-optimal ones,
-   all returning exact 128-bit costs and the tree.
+   (`search_weights.hpp`, `optimal_tree.hpp`): Knuth's O(n²) construction in
+   two memory layouts, Garsia–Wachs for gap-only weights, the balanced tree
+   for constant weights, and two near-optimal ones, all returning exact
+   128-bit costs and the tree.
 2. **`OptimalMap`**, a static ordered map laid out for a known access
    distribution (`optimal_map.hpp`, `detail/tree_packing.hpp`): a
    weight-optimal (or weight-balanced) binary tree, packed into multiway nodes
    that bbtree's node search reads.
 
-Sources: the manuscript "Core-Sparse Monge Construction for Full Optimal
-Binary Search Trees" (OpenAI Codex Sydney; problem selection and
-sponsorship: Joshuah Rainstar), falseywinchnet/papers_please `obst/`, commit
-eef656f, and its MIT-licensed prototype `obst/code/compact_obst.cpp`; the
-Gawrychowski–Gorbachev–Kociumaka core-sparse Monge product (ESA 2025); Gil
-and Itai, "How to pack trees" (1999). See [NOTICE](../NOTICE).
+Sources: Knuth, "Optimum binary search trees" (Acta Informatica, 1971);
+Garsia and Wachs, "A new algorithm for minimum cost binary trees" (SIAM J.
+Computing, 1977); Mehlhorn's bisection rule (1975); Gil and Itai, "How to
+pack trees" (J. Algorithms, 1999). The weight conventions follow the
+manuscript "Core-Sparse Monge Construction for Full Optimal Binary Search
+Trees" (OpenAI Codex Sydney; problem selection and sponsorship: Joshuah
+Rainstar), falseywinchnet/papers_please `obst/`, commit eef656f, whose
+construction this repository carried until it was removed (see History
+below). See [NOTICE](../NOTICE).
 
 ## Cost model
 
@@ -41,8 +43,6 @@ The caller knows its weights and picks the construction
 | `balanced` | when every key weight is equal and every gap weight is equal | flat weights | O(n) | O(n) |
 | `bottom_up` | no, within 0.4–1.7% here | near-optimal trees at any size | about n log n × spine² | O(n) |
 | `weight_balanced` | no, within 0.2–22% here | the cheapest approximation | O(n log n) | O(n) |
-| `monge_layers` | yes | near-flat weights at very large n only | proved O(n^{3/2} log^{3/2}(n+1)) at W = O(n) (manuscript); grows with the mass | witnesses: 26–73 M integers at n = 8192 |
-| `monge_additive` | yes | as `monge_layers` | candidate O(n log³(n+1)) at W = O(n) (under review) | as `monge_layers` |
 
 A guide, by what the weights look like:
 
@@ -60,9 +60,6 @@ A guide, by what the weights look like:
   16 384 keys against Knuth's 0.9–1.2 s and stayed within 1.7% of optimal on
   every family measured. `weight_balanced` is cheaper still but loses up to
   22% on Zipf weights.
-- The Monge layers need near-flat weights (small total deviation from a
-  constant) to pay; with the faster Knuth they no longer beat it at the
-  sizes measured (below).
 
 ### Knuth's two layouts
 
@@ -127,111 +124,39 @@ permutation. Every exact construction matched Knuth's cost at 1024, 4096 and
 16 384. Garsia–Wachs's moves were never the bottleneck here; an array-based
 working list is quadratic only on adversarial weights.
 
-### The Monge layers
+### Checks
 
-`monge_layers` is the manuscript's terminal-penalty iteration: H layers
-A_h(i, j) = W(i, j) + min over roots r of A_{h−1}(i, r) + A_{h−1}(r+1, j),
-H = min(n, f(W) + L) from the mixed Fibonacci mass lemma, each layer one
-core-sparse min-plus product of the finitely completed previous layer, with a
-fixed-point early stop and witness reconstruction. The port keeps the
-prototype's algorithm and witness structure and stores cores in
-compressed rows; on one instance (n = 4096, keys 1–32, gaps 0–3) it runs in
-3.2 s against the prototype's 13.8 s, with identical layer counts and cores.
-The manuscript's centering step (normalized height for large total mass) is
-not implemented.
+`tests/optimal_tree_test.cpp`: for every n ≤ 8 and eight weight families
+(small random with zeros, keys only, gaps only, up to 2⁴⁰, uniform, Zipf-like,
+an odd ramp and a ruler), every binary search tree is enumerated and costed;
+the cubic recurrence and both Knuth layouts must equal that minimum (and
+return the same tree), Garsia–Wachs must equal it on gap-only weights and
+refuse the rest, the balanced tree must equal it on constant weights, and the
+approximations must be valid and no cheaper. Then 96 instances 9 ≤ n < 149
+against the cubic recurrence, 8 instances 600 ≤ n < 1200 and 24 gap-only
+instances 200 ≤ n < 1600 against Knuth, and edge cases (empty, all-zero,
+near-2⁶⁴ weights on the 128-bit path, constant non-unit weights). Each
+returned tree is checked to be a search tree whose own cost is the reported
+cost.
 
-Checks (`tests/optimal_tree_test.cpp`): for every n ≤ 8 and eight weight
-families (small random with zeros, keys only, gaps only, up to 2⁴⁰, uniform,
-Zipf-like, the manuscript's odd ramp and ruler families), every binary search
-tree is enumerated and costed; the cubic recurrence, Knuth and the layers
-must all equal that minimum. Then 96 instances 9 ≤ n < 149 against the cubic
-recurrence, 8 instances 600 ≤ n < 1200 against Knuth, and edge cases (empty,
-all-zero, near-2⁶⁴ weights). Each returned tree is checked to be a search
-tree whose own cost is the reported cost.
+### History: the Monge layers
 
-### The additive base (Codex Sydney's revision)
-
-`monge_additive` (`LayerBase::additive`) replaces the penalty base
-A₀(i, j) = M(j − i) with A₀(i, j) = L·S(i, j) + (j − i), where
-S(i, j) = Σ_{r=i}^{j−1}(p_r + q_r + q_{r+1}) and L = ⌈log₂(n + 1)⌉. It is
-additive in the interval's ends, so its interior core is empty, and strictly
-above C(i, j) on every nonempty interval; the recurrence is unchanged. The
-note's argument: every layer satisfies C ≤ A_h ≤ 3L·W(i, j) + (j − i), so with
-U = 3LW + n the completion P = 2U + 1 suffices and every layer's density mass
-telescopes to at most U; with W = O(n) and H = O(log n) layers that suggests
-O(n log³ n) time through the core-sparse product. I checked the steps (the
-base bound, monotonicity, exactness at H and at a fixed point, the
-reconstruction argument, the telescoping) and found no flaw; the proof is
-Sydney's and still under review, so the bound is a candidate, not a claim.
-The implementation changes only the base row, the h = 1 band
-(min(A₀(i, i + 1), A₀(i + 1, i + 2)) − q_{i+1}) and P; the tests run it, and
-the penalty base, against enumeration, the cubic recurrence and Knuth.
-
-### Two-corner root screening (measured: no effect here)
-
-`MongeLayerOptions::screen_roots` drops, in every product, inner roots that
-cannot be the smallest minimizer of any entry: for k < l, Monge makes
-f_k − f_l nondecreasing (f_k(i, j) = A(i, k) + B(k, j)), so a root beaten by a
-later one at the top-left corner, or matched by an earlier one at the
-bottom-right corner, never wins (Codex Sydney). It is correct (tested, all
-configurations), but in this construction it removed no roots at all: every
-product spans the diagonal, where the completion P(i − j) makes the
-top-left corner rise and the bottom-right fall with the root, so every root
-is a record at both corners. It costs 1–8% and is off by default.
-
-### Measured layer construction time (Apple M4, LLVM 23, median of 3)
-
-These were measured against the previous Knuth layout (20 bytes a cell);
-the current `knuth` runs 1.5–2.1× faster than that, so the uniform-weight
-crossover below (n = 16 384) no longer holds, and the layers were not
-re-measured against it beyond 16 384.
-
-`results/2026-10-25-m4-monge-fast/` (current), with the earlier run in
-`results/2026-10-25-m4-monge-revision/` as "before". Weights: uniform (all
-p, q = 1), zipf (p = 10⁶/(rank + 1) + 1 for a random rank, q = 1), random
-(p in 1..1000, q in 0..999). Seconds.
-
-| family | n | knuth | penalty base, before → now | additive base, before → now | now ÷ knuth (penalty / additive) |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| uniform | 4096 | 0.080 | 0.651 → 0.301 | 0.652 → 0.300 | 3.76 / 3.75 |
-| uniform | 8192 | 0.355 | 1.620 → 0.751 | 1.627 → 0.747 | 2.12 / 2.10 |
-| uniform | 12 288 | 0.871 | 1.198 | 1.189 | 1.38 / 1.37 |
-| uniform | 16 384 | 1.836 | 3.188 → 1.786 | 3.120 → 1.776 | **0.97 / 0.97** |
-| uniform | 24 576 | 5.550 | 5.002 → 2.723 | 4.934 → 2.669 | **0.49 / 0.48** |
-| zipf | 8192 | 0.393 | 3.341 → 2.021 | 3.031 → 1.874 | 5.14 / 4.77 |
-| zipf | 16 384 | 1.446 | 8.163 → 4.943 | 7.417 → 4.544 | 3.42 / 3.14 |
-| zipf | 24 576 † | 4.107 | 8.146 | 7.465 | 1.98 / 1.82 |
-| random | 8192 | 0.384 | 5.566 → 3.521 | 6.385 → 4.024 | 9.17 / 10.48 |
-| random | 16 384 | 1.600 | 14.798 → 9.082 | 17.037 → 10.463 | 5.68 / 6.54 |
-| random | 24 576 † | 4.716 | 16.136 | 18.423 | 3.42 / 3.91 |
-
-† one repetition.
-
-**The layers beat Knuth from n = 16 384 for uniform weights** (additive
-1.776 s, range 1.772–1.791, against Knuth's 1.836 s, 1.804–1.857) and run in
-half Knuth's time at 24 576 (2.67 s against 5.55 s). For zipf and random
-weights Knuth is still faster at every size the Mini's 16 GB allows (its table
-is 10.7 GB at 32 768), but the ratio falls with n: zipf 5.1 → 3.1 → 1.8 and
-random 9.2 → 5.7 → 3.4 from 8192 to 24 576. That is one host and one crossing
-family; the trend is not a proof of a crossing for the others.
-
-What made the layers about twice as fast (2.1× uniform, 1.6× zipf and
-random, identical results): densities stay row-major through every
-producer, so building a matrix skips both counting sorts and, when nothing
-repeats, takes the input vector as its core without copying (the staircase
-merge emits each row's left part, staircase run and right part in order; the
-layer step puts each row's diagonal band before the product's densities); a
-column-major index is built only for the two matrices a merge walks, not for
-every matrix; contiguous selections (the split's halves, the layer's two
-operands) read one run of the core and the needed border spans without
-building index vectors or interval maps; and the per-row and per-column
-masses, interval maps and column flags reuse one scratch workspace per
-construction (`detail::ProductScratch`).
-
-On the bases: identical cores and times for uniform weights; the additive base
-cuts zipf cores by about 23% and time by 8–9%; for the random family
-(W ≈ 1000n, where the 3LW bound says nothing) its cores are 9–10% larger and it
-is 13–15% slower. Every run reached a fixed point before H.
+Until 2026-10-25 this repository also carried the manuscript's exact
+construction: bounded-height terminal-penalty layers, each a core-sparse
+Monge min-plus product (Gawrychowski–Gorbachev–Kociumaka, ESA 2025) with
+witnesses for reconstruction, rewritten from the manuscript's MIT-licensed
+prototype, and Codex Sydney's additive base and two-corner root screening.
+It beat the previous Knuth layout from n = 16 384 on uniform weights, and lost
+on skewed and random weights at every size measured (its time grows with the
+total mass). The current `knuth` is 1.5–2.1× faster than the layout it was
+compared with: at 16 384 uniform keys it takes 0.9–1.2 s against the layers'
+1.78 s, and larger sizes were not re-measured (at 24 576 the layers took
+2.67 s against the old Knuth's 5.55 s). Their one remaining niche, flat
+weights at very large n, is served exactly by `balanced`, so they were
+removed. The code is in the history up to commit f8c72e5; its measurements
+are in `results/2026-10-25-m4-monge-fast/` and
+`results/2026-10-25-m4-monge-revision/`; why no exact shortcut helps skewed
+weights is in `research/obst/NOTES.md`.
 
 ## Packing and layout
 
@@ -305,11 +230,8 @@ Reading them:
 
 - Construction for the map at millions of keys should use `bottom_up` (or
   `weight_balanced`, cheaper and looser); the exact constructions are
-  practical to a few times 10⁴ keys (Knuth by memory, 8 bytes a cell; the
-  layers by time), `garsia_wachs` to millions for gap-only weights.
+  practical to a few times 10⁴ keys (Knuth, by memory: 8 bytes a cell),
+  `garsia_wachs` to millions for gap-only weights.
 - The packing is optimal for the given binary tree, not among multiway
-  trees; an exact multiway construction (layers whose step splits an
+  trees; an exact multiway construction (a recurrence whose step splits an
   interval into up to K + 1 parts) is open.
-- Below the crossover the layers still lose on constant factors; matrices
-  still allocate their borders, cores and row offsets, and the dense leaves
-  compute whole rows and columns of their operands.

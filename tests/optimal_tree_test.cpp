@@ -18,9 +18,6 @@ using stx_btree::BinaryTreeRules;
 using stx_btree::BinaryTreeShape;
 using stx_btree::ExactCost;
 using stx_btree::KeyIndex;
-using stx_btree::LayerBase;
-using stx_btree::MongeLayerOptions;
-using stx_btree::MongeLayerReport;
 using stx_btree::OptimalTreeBuilder;
 using stx_btree::SearchTree;
 using stx_btree::SearchWeight;
@@ -263,7 +260,7 @@ void expect_valid(const SearchTree& tree, const SearchWeights& weights, const ch
     return true;
 }
 
-// Every construction but Knuth's own and the Monge layers on these weights,
+// Every construction but Knuth's own on these weights,
 // against the optimum: the scattered Knuth exact and with Knuth's tree,
 // Garsia-Wachs exact on gap-only weights and refusing others, the balanced
 // tree exact on constant weights, the approximations valid and no cheaper.
@@ -300,28 +297,6 @@ void expect_other_constructions(const SearchWeights& weights, const SearchTree& 
     TestFailure::expect(bisected.cost >= optimum, label, "weight_balanced below the optimum");
 }
 
-constexpr MongeLayerOptions all_layer_options[] = {
-    MongeLayerOptions{.base = LayerBase::terminal_penalty, .screen_roots = true},
-    MongeLayerOptions{.base = LayerBase::terminal_penalty, .screen_roots = false},
-    MongeLayerOptions{.base = LayerBase::additive, .screen_roots = true},
-    MongeLayerOptions{.base = LayerBase::additive, .screen_roots = false},
-};
-
-const char* const layer_option_labels[] = {"penalty, screened", "penalty", "additive, screened", "additive"};
-
-// Every Monge configuration on these weights: a valid tree of cost `optimum`
-// within the height bound.
-void expect_every_layer_option(const SearchWeights& weights, ExactCost optimum) {
-    std::size_t option = 0;
-    for (option = 0; option < 4; option += 1) {
-        MongeLayerReport report;
-        const SearchTree tree = OptimalTreeBuilder::monge_layers(weights, all_layer_options[option], report);
-        expect_valid(tree, weights, layer_option_labels[option]);
-        TestFailure::expect(tree.cost == optimum, layer_option_labels[option], "not optimal");
-        TestFailure::expect(report.layers <= report.height_bound, layer_option_labels[option], "more layers than the bound");
-    }
-}
-
 void check_against_enumeration(SplitMix64& random) {
     std::size_t checked = 0;
     for (const WeightFamily family : all_families) {
@@ -336,7 +311,6 @@ void check_against_enumeration(SplitMix64& random) {
                 const SearchTree by_knuth = OptimalTreeBuilder::knuth(weights);
                 expect_valid(by_knuth, weights, "knuth small");
                 TestFailure::expect(by_knuth.cost == exhaustive, "knuth small", "not optimal");
-                expect_every_layer_option(weights, exhaustive);
                 expect_other_constructions(weights, by_knuth, exhaustive, "small");
                 checked += 1;
             }
@@ -356,7 +330,6 @@ void check_against_cubic(SplitMix64& random) {
             const SearchTree by_knuth = OptimalTreeBuilder::knuth(weights);
             expect_valid(by_knuth, weights, "knuth");
             TestFailure::expect(by_knuth.cost == cubic, "knuth", "not optimal");
-            expect_every_layer_option(weights, cubic);
             expect_other_constructions(weights, by_knuth, cubic, "cubic");
             checked += 1;
         }
@@ -371,25 +344,22 @@ void check_larger(SplitMix64& random) {
         const SearchWeights weights = WeightMaker::make(family, key_count, random);
         const SearchTree by_knuth = OptimalTreeBuilder::knuth(weights);
         expect_valid(by_knuth, weights, "knuth large");
-        expect_every_layer_option(weights, by_knuth.cost);
         expect_other_constructions(weights, by_knuth, by_knuth.cost, "large");
         checked += 1;
     }
-    std::printf("knuth/monge: %zu instances, 600 <= n < 1200\n", checked);
+    std::printf("knuth: %zu instances, 600 <= n < 1200\n", checked);
 }
 
 void check_edges() {
     SearchWeights empty;
     empty.gaps.assign(1, 7);
     TestFailure::expect(OptimalTreeBuilder::knuth(empty).cost == 0, "edges", "empty knuth");
-    MongeLayerReport report;
-    TestFailure::expect(OptimalTreeBuilder::monge_layers(empty, report).cost == 0, "edges", "empty monge");
     TestFailure::expect(OptimalTreeBuilder::weight_balanced(empty).shape.root == no_key, "edges", "empty balanced");
 
     SearchWeights zeros;
     zeros.keys.assign(5, 0);
     zeros.gaps.assign(6, 0);
-    const SearchTree zero_tree = OptimalTreeBuilder::monge_layers(zeros, report);
+    const SearchTree zero_tree = OptimalTreeBuilder::knuth(zeros);
     expect_valid(zero_tree, zeros, "zero weights");
     TestFailure::expect(zero_tree.cost == 0, "zero weights", "cost");
 
@@ -410,8 +380,6 @@ void check_edges() {
     heavy.keys.assign(64, ~static_cast<SearchWeight>(0));
     heavy.gaps.assign(65, ~static_cast<SearchWeight>(0));
     const SearchTree heavy_knuth = OptimalTreeBuilder::knuth(heavy);
-    expect_every_layer_option(heavy, heavy_knuth.cost);
-    expect_every_layer_option(zeros, 0);
     // These weights take the 128-bit Knuth path; the cubic reference agrees.
     TestFailure::expect(heavy_knuth.cost == CubicReference::optimal_cost(heavy), "edges", "128-bit knuth not optimal");
     expect_other_constructions(heavy, heavy_knuth, heavy_knuth.cost, "heavy");

@@ -17,16 +17,13 @@ First C++ form of bbtree 0.1.5 (upstream commit 8adae97).
   `for_each_mut`.
 - Differential, threaded and stress tests, a custom-key example, an
   installed-consumer test, matched C++/Rust benchmarks and their runner.
-- Optimal binary search trees (`optimal_tree.hpp`): Knuth, the core-sparse
-  Monge layer construction (rewritten from papers_please `obst`), and a
+- Optimal binary search trees (`optimal_tree.hpp`): Knuth and a
   weight-balanced approximation, with exact 128-bit costs.
 - `OptimalMap` (`optimal_map.hpp`): a static map laid out for an access
   distribution, with tree packing, count layout for flat regions,
   `find` and `find_many`; `optimal_map_bench`.
 - Measurements on the Linux x86-64 compute pod (GCC 13.3), where the C++ form
   is behind bbtree.
-- `TreeConstruction::monge_additive` (Codex Sydney's additive base) and
-  `MongeLayerOptions` (base, two-corner root screening).
 - `PooledPageAllocator` (`pooled_page_allocator.hpp`) for both maps, and the
   `stx_btree_bench_pooled` build of the bench.
 - `knuth` keeps one diagonal of roots instead of a root table, recovers the
@@ -36,4 +33,8 @@ First C++ form of bbtree 0.1.5 (upstream commit 8adae97).
   popularity scattered over the keys), `garsia_wachs` (gap-only weights),
   `balanced` (constant weights) and `bottom_up` (near-optimal); the
   `construct` benchmark covers log-normal, Laplacian and gap-only weights.
+- The core-sparse Monge layer construction (rewritten from papers_please
+  `obst`, with Codex Sydney's additive base and root screening) was added
+  and then removed once the lean Knuth and `balanced` covered its cases; it
+  remains in the history up to f8c72e5.
 - Not a stable ABI or memory format.

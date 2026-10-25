@@ -151,8 +151,7 @@ its weights look like: `knuth` (exact, any weights; 8 bytes a cell and
 faster when popularity is scattered over the keys), `garsia_wachs` (exact for
 gap-only weights, linear memory), `balanced` (exact for constant weights),
 `bottom_up` (within 1.7% of optimal in about a thousandth of Knuth's time at
-16 384 keys), `weight_balanced`, and the core-sparse Monge layers of the
-papers_please `obst` manuscript.
+16 384 keys) and `weight_balanced`.
 [Optimal trees](docs/OPTIMAL_TREES.md) has the design, the checks and the
 numbers.
 

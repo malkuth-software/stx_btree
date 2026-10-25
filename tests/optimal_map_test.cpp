@@ -361,9 +361,6 @@ void check_u64_maps(SplitMix64& random) {
                 gaps_only.keys.assign(weights.keys.size(), 0);
                 check_map(keys, absent, gaps_only, TreeConstruction::garsia_wachs, "u64 garsia_wachs");
             }
-            if (keys.size() <= 300) {
-                check_map(keys, absent, weights, TreeConstruction::monge_layers, "u64 monge");
-            }
             checked += 1;
         }
     }

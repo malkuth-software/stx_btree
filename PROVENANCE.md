@@ -81,28 +81,25 @@ proven.
 
 ## Optimal search trees and the static map
 
-`search_weights.hpp`, `optimal_tree.hpp`, `detail/monge_product.hpp`,
-`detail/tree_packing.hpp` and `optimal_map.hpp` are not from bbtree. The
-exact layer construction (`monge_layers`) and the core-sparse Monge product
-follow the manuscript "Core-Sparse Monge Construction for Full Optimal
-Binary Search Trees" (OpenAI Codex Sydney; problem selection and
-sponsorship: Joshuah Rainstar) in
+`search_weights.hpp`, `optimal_tree.hpp`, `detail/tree_packing.hpp` and
+`optimal_map.hpp` are not from bbtree. The weight conventions follow the
+manuscript "Core-Sparse Monge Construction for Full Optimal Binary Search
+Trees" (OpenAI Codex Sydney; problem selection and sponsorship: Joshuah
+Rainstar) in
 [falseywinchnet/papers_please](https://github.com/falseywinchnet/papers_please)
-at commit eef656fae6e6bf65fd19b5f74abc6081ad6e67f7, and rewrite its MIT-licensed
-prototype `obst/code/compact_obst.cpp` (notice in [NOTICE](NOTICE)) in the
-house style, with compressed-row storage in place of per-row lists. Knuth's
-O(n^2) construction, Mehlhorn's bisection rule, the Gil–Itai packing and the
-count layout are standard; the map's node search reuses this repository's
-bbtree-derived inline keys, lane-group count and prefetch. Written by Claude
-Code (Claude Opus 5.5) under the owner's direction.
-The additive layer base (`LayerBase::additive`, `monge_additive`) and the
-two-corner root screening (`MongeLayerOptions::screen_roots`) implement
-research notes by Codex Sydney (2026-10-25), shared in this project's
-session; their proofs are Sydney's and under review.
+at commit eef656fae6e6bf65fd19b5f74abc6081ad6e67f7. Its exact layer
+construction, rewritten from its MIT-licensed prototype
+`obst/code/compact_obst.cpp`, with Codex Sydney's additive base and
+two-corner root screening, was part of this repository up to commit f8c72e5
+and has been removed (docs/OPTIMAL_TREES.md, History). Knuth's O(n^2)
+construction, Garsia–Wachs, Mehlhorn's bisection rule, the Gil–Itai packing
+and the count layout are standard; the map's node search reuses this
+repository's bbtree-derived inline keys, lane-group count and prefetch.
+Written by Claude Code (Claude Opus 5.5) under the owner's direction.
 Knuth's single-diagonal root array, root recovery from the cost table and
 64-bit cost storage follow suggestions from an OpenAI GPT session the owner
 shared (2026-10-25); the row-by-row, column-major layout (`knuth_scattered`)
 follows its note that a row schedule wins at larger n. The code is written
-here. Garsia–Wachs (1977) is the standard algorithm (Knuth, TAOCP 6.2.2).
+here. Garsia–Wachs (1977) follows Knuth, TAOCP 6.2.2.
 `bottom_up` comes from this project's research (research/obst/NOTES.md).
 [docs/OPTIMAL_TREES.md](docs/OPTIMAL_TREES.md) has the design and measurements.

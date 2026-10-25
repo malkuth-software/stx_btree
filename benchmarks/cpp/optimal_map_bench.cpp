@@ -20,7 +20,7 @@
 //
 // construct: every construction that applies to one weight family
 // (construct_weights) at the given size, seconds per build and cost against
-// Knuth's optimum, and the packing; "layers" adds the Monge layers.
+// Knuth's optimum, and the packing.
 //
 // One CSV line per measurement: mode, structure, keys, parameter, ns per
 // operation (median over repetitions), min, max, and an extra field.
@@ -176,20 +176,15 @@ const char* construction_name(TreeConstruction construction) {
         return "bottom_up";
     case TreeConstruction::weight_balanced:
         return "weight_balanced";
-    case TreeConstruction::monge_layers:
-        return "monge_layers";
-    case TreeConstruction::monge_additive:
-        return "monge_additive";
     }
     return "unknown";
 }
 
 TreeConstruction parse_construction(const char* text) {
-    const TreeConstruction all[8] = {TreeConstruction::knuth,           TreeConstruction::knuth_scattered, TreeConstruction::garsia_wachs,
-                                     TreeConstruction::balanced,        TreeConstruction::bottom_up,       TreeConstruction::weight_balanced,
-                                     TreeConstruction::monge_layers,    TreeConstruction::monge_additive};
+    const TreeConstruction all[6] = {TreeConstruction::knuth,    TreeConstruction::knuth_scattered, TreeConstruction::garsia_wachs,
+                                     TreeConstruction::balanced, TreeConstruction::bottom_up,       TreeConstruction::weight_balanced};
     std::size_t index = 0;
-    for (index = 0; index < 8; index += 1) {
+    for (index = 0; index < 6; index += 1) {
         if (std::strcmp(text, construction_name(all[index])) == 0) {
             return all[index];
         }
@@ -410,7 +405,7 @@ SearchWeights construct_weights(std::size_t key_count, const char* family) {
     return weights;
 }
 
-int run_construct(std::size_t key_count, const char* family, std::size_t repetitions, bool with_layers) {
+int run_construct(std::size_t key_count, const char* family, std::size_t repetitions) {
     const SearchWeights weights = construct_weights(key_count, family);
     bool keys_zero = true;
     std::size_t index = 0;
@@ -424,10 +419,6 @@ int run_construct(std::size_t key_count, const char* family, std::size_t repetit
                                                    TreeConstruction::weight_balanced};
     if (keys_zero) {
         constructions.push_back(TreeConstruction::garsia_wachs);
-    }
-    if (with_layers) {
-        constructions.push_back(TreeConstruction::monge_layers);
-        constructions.push_back(TreeConstruction::monge_additive);
     }
     std::vector<std::vector<double>> seconds(constructions.size());
     std::vector<ExactCost> costs(constructions.size(), 0);
@@ -457,8 +448,7 @@ int run_construct(std::size_t key_count, const char* family, std::size_t repetit
         char extra[64];
         std::snprintf(extra, sizeof(extra), "cost_ratio=%.6f", static_cast<double>(costs[index]) / static_cast<double>(optimum));
         print_line("construct", construction_name(constructions[index]), key_count, parameter, summarize(seconds[index]), std::string(extra));
-        const bool exact = constructions[index] == TreeConstruction::knuth_scattered || constructions[index] == TreeConstruction::garsia_wachs ||
-                           constructions[index] == TreeConstruction::monge_layers || constructions[index] == TreeConstruction::monge_additive;
+        const bool exact = constructions[index] == TreeConstruction::knuth_scattered || constructions[index] == TreeConstruction::garsia_wachs;
         if (exact && costs[index] != optimum) {
             std::fprintf(stderr, "%s disagrees with knuth\n", construction_name(constructions[index]));
             return 1;
@@ -482,11 +472,10 @@ int main(int argc, char** argv) {
     if (argc >= 5 && std::strcmp(argv[1], "construct") == 0) {
         const std::size_t key_count = std::strtoull(argv[2], nullptr, 10);
         const std::size_t repetitions = std::strtoull(argv[4], nullptr, 10);
-        const bool with_layers = argc >= 6 && std::strcmp(argv[5], "layers") == 0;
-        return run_construct(key_count, argv[3], repetitions, with_layers);
+        return run_construct(key_count, argv[3], repetitions);
     }
     std::fprintf(stderr,
                  "usage: optimal_map_bench lookup <keys> <zipf s> <queries> <repetitions> <construction> [count layout slack percent]\n"
-                 "       optimal_map_bench construct <keys> <uniform|zipf|log_normal|laplacian|random|gaps> <repetitions> [layers]\n");
+                 "       optimal_map_bench construct <keys> <uniform|zipf|log_normal|laplacian|random|gaps> <repetitions>\n");
     return 2;
 }

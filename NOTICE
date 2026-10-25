@@ -18,37 +18,15 @@ Decision numbers (Dnn) and document names cited in the source refer to
 bbtree's design/03-decisions.md and design/*.md at that commit.
 
 The optimal search tree components (include/stx_btree/search_weights.hpp,
-optimal_tree.hpp, detail/monge_product.hpp) implement the construction of
-"Core-Sparse Monge Construction for Full Optimal Binary Search Trees" by
-OpenAI Codex Sydney (problem selection and sponsorship: Joshuah Rainstar),
+optimal_tree.hpp) follow the weight conventions of "Core-Sparse Monge
+Construction for Full Optimal Binary Search Trees" by OpenAI Codex Sydney
+(problem selection and sponsorship: Joshuah Rainstar),
 https://github.com/falseywinchnet/papers_please (obst/), commit
-eef656fae6e6bf65fd19b5f74abc6081ad6e67f7. detail/monge_product.hpp and the
-layer construction in optimal_tree.hpp are a rewrite of its prototype
-obst/code/compact_obst.cpp, which is distributed under this license:
+eef656fae6e6bf65fd19b5f74abc6081ad6e67f7. Earlier revisions of this
+repository (up to commit f8c72e5) also contained a rewrite of its MIT-licensed
+prototype obst/code/compact_obst.cpp (Copyright (c) 2026 ultimussaeculi);
+that code is no longer included.
 
-    MIT License
-
-    Copyright (c) 2026 ultimussaeculi
-
-    Permission is hereby granted, free of charge, to any person obtaining a
-    copy of this software and associated documentation files (the
-    "Software"), to deal in the Software without restriction, including
-    without limitation the rights to use, copy, modify, merge, publish,
-    distribute, sublicense, and/or sell copies of the Software, and to permit
-    persons to whom the Software is furnished to do so, subject to the
-    following conditions:
-
-    The above copyright notice and this permission notice shall be included
-    in all copies or substantial portions of the Software.
-
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-    OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
-    NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-    DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
-    OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
-    USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-The core-sparse Monge product is due to Gawrychowski, Gorbachev and
-Kociumaka (ESA 2025); the packing dynamic program follows Gil and Itai,
-"How to pack trees" (J. Algorithms, 1999).
+The packing dynamic program follows Gil and Itai, "How to pack trees"
+(J. Algorithms, 1999); Garsia-Wachs follows Garsia and Wachs (SIAM J.
+Computing, 1977).
