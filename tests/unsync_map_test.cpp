@@ -207,6 +207,52 @@ void run_ordered(const char* label, std::size_t count, bool ascending) {
     test.check_iteration();
 }
 
+// Batched inserts against inserts one at a time, on a tree past the batch
+// cutoff: repeated keys within a batch, keys already present, ascending runs
+// that append, and keys outside the shared prefix.
+template <typename Key>
+void run_insert_many(const char* label, std::uint64_t seed, bool base_shares_prefix) {
+    using Map = stx_btree::unsync::BBTreeMap<Key, std::uint64_t>;
+    Differential<Key, std::uint64_t> test(label);
+    SplitMix64 random(seed);
+    KeyMaker<Key> keys(seed);
+    std::uint64_t index = 0;
+    for (index = 0; index < 90000; index += 1) {
+        // Ordered base keys share a prefix that random batch keys lack.
+        test.insert(base_shares_prefix ? keys.make_ordered(index) : keys.make(index), index);
+    }
+    std::size_t round = 0;
+    for (round = 0; round < 3000; round += 1) {
+        std::array<typename Map::Entry, 16> entries{};
+        std::size_t lane = 0;
+        const bool ascending = round % 50 == 0;
+        for (lane = 0; lane < 16; lane += 1) {
+            const std::uint64_t pick = ascending ? 1000000 + round * 16 + lane : random.below(140000);
+            const std::uint64_t key_index = (lane == 9 && !ascending) ? entries[3].value : pick;
+            entries[lane].key = ascending ? keys.make_ordered(pick) : keys.make(key_index);
+            entries[lane].value = key_index;
+        }
+        std::array<typename Map::Entry, 16> copies = entries;
+        const std::array<std::optional<std::uint64_t>, 16> results = test.map.insert_many(std::move(entries));
+        for (lane = 0; lane < 16; lane += 1) {
+            const typename std::map<Key, std::uint64_t>::iterator found = test.reference.find(copies[lane].key);
+            if (found == test.reference.end()) {
+                TestFailure::expect(!results[lane].has_value(), label, "a batched new key returns nothing");
+                test.reference.emplace(copies[lane].key, copies[lane].value);
+            } else {
+                TestFailure::expect(results[lane].has_value() && *results[lane] == (*found).second, label, "a batched replacement");
+                (*found).second = copies[lane].value;
+            }
+        }
+        if (round % 500 == 0) {
+            test.check_structure();
+        }
+    }
+    test.check_structure();
+    test.check_iteration();
+    std::printf("%-18s batched inserts ok\n", label);
+}
+
 } // namespace
 
 int main() {
@@ -225,6 +271,10 @@ int main() {
     run_ordered<std::uint64_t, std::uint64_t>("u64 descending", 100000, false);
     run_ordered<std::string, std::uint64_t>("string ascending", 60000, true);
     run_ordered<std::array<std::uint8_t, 16>, std::uint64_t>("uuid ascending", 60000, true);
+    run_insert_many<std::uint64_t>("u64 batches", 21, false);
+    run_insert_many<std::string>("string batches", 22, false);
+    run_insert_many<std::uint64_t>("u64 prefix batches", 23, true);
+    run_insert_many<std::string>("string prefix batch", 24, true);
     std::printf("unsync map tests passed\n");
     return 0;
 }

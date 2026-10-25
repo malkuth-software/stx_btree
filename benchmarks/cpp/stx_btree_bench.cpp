@@ -156,6 +156,24 @@ public:
         elapsed = Clock::now_ns() - start;
         Report::line(label, "get_miss", operations, elapsed, checksum);
 
+        constexpr std::size_t batch = 64;
+        const std::uint64_t batched = operations - operations % batch;
+        checksum = 0;
+        start = Clock::now_ns();
+        std::array<typename Traits::Query, batch> queries;
+        for (index = 0; index < batched; index += batch) {
+            std::size_t lane = 0;
+            for (lane = 0; lane < batch; lane += 1) {
+                queries[lane] = Traits::query_of(hits[index + lane]);
+            }
+            const std::array<std::uint64_t*, batch> values = map.get_many(queries);
+            for (lane = 0; lane < batch; lane += 1) {
+                checksum += values[lane] == nullptr ? 0 : *values[lane];
+            }
+        }
+        elapsed = Clock::now_ns() - start;
+        Report::line(label, "get_hit_batched", batched, elapsed, checksum);
+
         const std::uint64_t scans = operations / 16;
         checksum = 0;
         start = Clock::now_ns();
@@ -205,6 +223,21 @@ public:
         }
         elapsed = Clock::now_ns() - start;
         Report::line(label, "insert_sequential", size, elapsed, sequential.size());
+
+        // A fresh map built 16 entries a call (bbtree's insert batches).
+        const std::uint64_t whole = size - size % 16;
+        Map batched_map;
+        start = Clock::now_ns();
+        for (index = 0; index < whole; index += 16) {
+            std::array<typename Map::Entry, 16> entries;
+            std::size_t lane = 0;
+            for (lane = 0; lane < 16; lane += 1) {
+                entries[lane] = typename Map::Entry{keys[index + lane], index + lane};
+            }
+            batched_map.insert_many(std::move(entries));
+        }
+        elapsed = Clock::now_ns() - start;
+        Report::line(label, "insert_random_batched", whole, elapsed, batched_map.size());
     }
 };
 
@@ -344,6 +377,20 @@ public:
         }
         elapsed = Clock::now_ns() - start;
         Report::line(label, "insert_sequential", size, elapsed, size);
+
+        const std::uint64_t whole = size - size % 16;
+        Map batched_map;
+        start = Clock::now_ns();
+        for (index = 0; index < whole; index += 16) {
+            std::array<typename Map::Entry, 16> entries;
+            std::size_t lane = 0;
+            for (lane = 0; lane < 16; lane += 1) {
+                entries[lane] = typename Map::Entry{keys[index + lane], index + lane};
+            }
+            batched_map.insert_many(std::move(entries));
+        }
+        elapsed = Clock::now_ns() - start;
+        Report::line(label, "insert_random_batched", whole, elapsed, whole);
     }
 
     // --- Threads ------------------------------------------------------------

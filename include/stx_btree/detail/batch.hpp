@@ -94,7 +94,108 @@ public:
         }
     }
 
+    // Where an insert goes, found read-only ahead of the batch's changes
+    // (bbtree Destination): a leaf with its length when searched and the
+    // search's answer, a separator equal to the key, or "from the root" for
+    // a key outside the shared prefix or a destination a change made stale.
+    enum class DestinationKind : std::uint8_t { from_root, leaf, separator };
+
+    struct Destination final {
+        DestinationKind kind = DestinationKind::from_root;
+        std::byte* node = nullptr;
+        std::size_t searched_length = 0;
+        bool found = false;
+        std::size_t index = 0;
+    };
+
+    static void find_destinations(NodePointer root, const Query* queries, Destination* destinations, std::size_t count) noexcept {
+        std::size_t first = 0;
+        while (first < count) {
+            const std::size_t remaining = count - first;
+            const std::size_t group = remaining < lanes_per_round ? remaining : lanes_per_round;
+            run_destination_group(root, queries + first, destinations + first, group);
+            first += group;
+        }
+    }
+
 private:
+    static void run_destination_group(NodePointer root, const Query* queries, Destination* destinations, std::size_t count) noexcept {
+        Lane lanes[lanes_per_round];
+        std::uint64_t live = 0;
+        std::size_t index = 0;
+        for (index = 0; index < count; index += 1) {
+            lanes[index] = Lane{.query = queries + index, .node = root.page(), .index = 0, .state = LaneState::start};
+            destinations[index] = Destination{};
+            live |= static_cast<std::uint64_t>(1) << index;
+        }
+        while (live != 0) {
+            std::uint64_t round = live;
+            while (round != 0) {
+                const unsigned lane_index = static_cast<unsigned>(std::countr_zero(round));
+                round &= round - 1;
+                destination_step(root, lanes[lane_index], destinations[lane_index]);
+                if (lanes[lane_index].state == LaneState::done) {
+                    live &= ~(static_cast<std::uint64_t>(1) << lane_index);
+                }
+            }
+        }
+    }
+
+    STX_BTREE_ALWAYS_INLINE static void destination_step(NodePointer root, Lane& lane, Destination& destination) noexcept {
+        const Query& query = *lane.query;
+        switch (lane.state) {
+        case LaneState::start: {
+            const RootPage<Shape> root_page = RootPage<Shape>{root.page()};
+            const std::size_t length = root_page.shared_length();
+            if (length != 0 && Traits::compare_shared(query, root_page.shared_bytes(), length) != 0) {
+                lane.state = LaneState::done;
+                return;
+            }
+            lane.state = LaneState::route;
+            return;
+        }
+        case LaneState::route: {
+            const Internal node = Internal{lane.node};
+            const typename Internal::SearchResult result_at = node.search(query);
+            if (result_at.found) {
+                destination = Destination{
+                    .kind = DestinationKind::separator, .node = node.page, .searched_length = 0,
+                    .found = true, .index = result_at.index};
+                lane.state = LaneState::done;
+                return;
+            }
+            lane.index = result_at.index;
+            Prefetcher::hint(node.edges() + result_at.index);
+            lane.state = LaneState::follow;
+            return;
+        }
+        case LaneState::follow: {
+            const NodePointer child = Internal{lane.node}.edge(lane.index);
+            lane.node = child.page();
+            Prefetcher::hint(child.page());
+            lane.state = child.is_leaf() ? LaneState::leaf : LaneState::route;
+            return;
+        }
+        case LaneState::leaf: {
+            const Leaf leaf = Leaf{lane.node};
+            const typename Leaf::SearchResult result_at = leaf.search(query);
+            if (!result_at.found && result_at.index < leaf.length()) {
+                Prefetcher::hint(leaf.entry(result_at.index + 1));
+            }
+            destination = Destination{
+                .kind = DestinationKind::leaf, .node = leaf.page, .searched_length = leaf.length(),
+                .found = result_at.found, .index = result_at.index};
+            lane.state = LaneState::done;
+            return;
+        }
+        case LaneState::child:
+        case LaneState::candidate:
+        case LaneState::done:
+            break;
+        }
+        lane.state = LaneState::done;
+    }
+
     static void run_group(NodePointer root, const Query* queries, Value** results, std::size_t count) noexcept {
         Lane lanes[lanes_per_round];
         std::uint64_t live = 0;
@@ -205,7 +306,7 @@ public:
         const Query* query = nullptr;
         std::byte* node = nullptr;
         std::byte* pending = nullptr;
-        Version version;
+        Version version{0};
         std::size_t index = 0;
         bool at_separator = false;
         bool at_root = true;
@@ -264,7 +365,7 @@ private:
         std::size_t index = 0;
         for (index = 0; index < count; index += 1) {
             lanes[index] = Lane{
-                .query = queries + index, .node = nullptr, .pending = nullptr, .version = Version{},
+                .query = queries + index, .node = nullptr, .pending = nullptr, .version = Version{0},
                 .index = 0, .at_separator = false, .at_root = true, .state = LaneState::start};
             live |= static_cast<std::uint64_t>(1) << index;
         }
@@ -302,9 +403,7 @@ private:
             if (!(tree.load_root() == root)) {
                 return;
             }
-            SharedPrefixBytes shared;
-            RootPage<Shape>{root.page()}.copy_shared_prefix(&shared);
-            if (Tree::place_against(shared, query) != DescentOutcome::inside) {
+            if (Tree::place_against_root(root, query) != DescentOutcome::inside) {
                 if (NodeLatch::of(node.page).is_unchanged(version)) {
                     lane.state = LaneState::done;
                 }
@@ -317,7 +416,7 @@ private:
         }
         case LaneState::route: {
             const Internal node = Internal{lane.node};
-            Routed routed;
+            Routed routed{0, 0, false};
             if (!Tree::route_racing(node, lane.version, query, &routed)) {
                 restart(lane);
                 return;
@@ -413,6 +512,222 @@ private:
                 return;
             }
         }
+        case LaneState::done:
+            break;
+        }
+        lane.state = LaneState::done;
+    }
+
+public:
+    // Inserts in input order, each through the leaf its lane found when that
+    // leaf is unchanged since (bbtree latched insert_batch). `policy` is the
+    // shared insert policy, run once per entry; results get its outputs.
+    template <typename EntryType, std::size_t Count, typename Policy>
+    static void insert_many(Tree& tree, EntryType* entries, std::optional<typename Policy::Output>* results, Policy& policy) {
+        std::size_t index = 0;
+        if (Count < 2 || !batches(tree)) {
+            for (index = 0; index < Count; index += 1) {
+                results[index].emplace(tree.insert(std::move(entries[index].key), std::move(entries[index].value), policy));
+            }
+            return;
+        }
+        std::optional<typename Policy::Output> appended;
+        if (tree.try_append(entries[0].key, entries[0].value, policy, appended)) {
+            results[0] = std::move(appended);
+            for (index = 1; index < Count; index += 1) {
+                results[index].emplace(tree.insert(std::move(entries[index].key), std::move(entries[index].value), policy));
+            }
+            return;
+        }
+        Query queries[Count];
+        LeafDestination destinations[Count];
+        for (index = 0; index < Count; index += 1) {
+            queries[index] = Traits::query_of(entries[index].key);
+        }
+        find_leaves(tree, queries, destinations, Count);
+        for (index = 0; index < Count; index += 1) {
+            const LeafDestination destination = destinations[index];
+            if (!destination.valid) {
+                results[index].emplace(tree.insert(std::move(entries[index].key), std::move(entries[index].value), policy));
+                continue;
+            }
+            const Leaf leaf = Leaf{destination.leaf};
+            typename Tree::HeldLeaf held;
+            bool taken = held.try_lock_exclusive_at(leaf, destination.version);
+            if (taken && destination.at_separator && !Tree::is_head(leaf, queries[index])) {
+                held.release();
+                taken = false;
+            }
+            if (!taken) {
+                forget_leaf(destinations, index + 1, Count, destination.leaf);
+                results[index].emplace(tree.insert(std::move(entries[index].key), std::move(entries[index].value), policy));
+                continue;
+            }
+            std::size_t edge = 0;
+            const typename Tree::InsertStep step = tree.insert_into(
+                held, destination.at_separator, entries[index].key, entries[index].value, policy, results[index], &edge);
+            held.release();
+            if (step == Tree::InsertStep::done) {
+                // Letting go moved the leaf's version on: later lanes that read
+                // it at the same version may still trust it.
+                const Version next{destination.version.word + NodeLatch::version_unit};
+                std::size_t later = 0;
+                for (later = index + 1; later < Count; later += 1) {
+                    if (destinations[later].valid && destinations[later].leaf == destination.leaf &&
+                        destinations[later].version == destination.version) {
+                        destinations[later].version = next;
+                    }
+                }
+                continue;
+            }
+            forget_leaf(destinations, index + 1, Count, destination.leaf);
+            results[index].emplace(tree.insert_splitting(std::move(entries[index].key), std::move(entries[index].value), policy));
+        }
+    }
+
+    // A shared map's insert destination: the leaf, the version a lane read
+    // it at, and whether the key matched a separator on the way (bbtree
+    // latched/batch.rs, Destination). None for a key outside the shared
+    // prefix, or on a root leaf.
+    struct LeafDestination final {
+        bool valid = false;
+        std::byte* leaf = nullptr;
+        Version version{0};
+        bool at_separator = false;
+    };
+
+    static void find_leaves(const Tree& tree, const Query* queries, LeafDestination* destinations, std::size_t count) noexcept {
+        std::size_t first = 0;
+        while (first < count) {
+            const std::size_t remaining = count - first;
+            const std::size_t group = remaining < lanes_per_round ? remaining : lanes_per_round;
+            run_leaf_group(tree, queries + first, destinations + first, group);
+            first += group;
+        }
+    }
+
+private:
+    static void forget_leaf(LeafDestination* destinations, std::size_t first, std::size_t count, std::byte* leaf) noexcept {
+        std::size_t later = 0;
+        for (later = first; later < count; later += 1) {
+            if (destinations[later].valid && destinations[later].leaf == leaf) {
+                destinations[later].valid = false;
+            }
+        }
+    }
+
+    static void run_leaf_group(const Tree& tree, const Query* queries, LeafDestination* destinations, std::size_t count) noexcept {
+        Lane lanes[lanes_per_round];
+        std::uint64_t live = 0;
+        std::size_t index = 0;
+        for (index = 0; index < count; index += 1) {
+            lanes[index] = Lane{
+                .query = queries + index, .node = nullptr, .pending = nullptr, .version = Version{0},
+                .index = 0, .at_separator = false, .at_root = true, .state = LaneState::start};
+            destinations[index] = LeafDestination{};
+            live |= static_cast<std::uint64_t>(1) << index;
+        }
+        while (live != 0) {
+            std::uint64_t round = live;
+            while (round != 0) {
+                const unsigned lane_index = static_cast<unsigned>(std::countr_zero(round));
+                round &= round - 1;
+                leaf_step(tree, lanes[lane_index], destinations[lane_index]);
+                if (lanes[lane_index].state == LaneState::done) {
+                    live &= ~(static_cast<std::uint64_t>(1) << lane_index);
+                }
+            }
+        }
+    }
+
+    STX_BTREE_ALWAYS_INLINE static void leaf_step(const Tree& tree, Lane& lane, LeafDestination& destination) noexcept {
+        const Query& query = *lane.query;
+        switch (lane.state) {
+        case LaneState::start: {
+            const NodePointer root = tree.load_root();
+            if (root.is_leaf()) {
+                lane.state = LaneState::done;
+                return;
+            }
+            const Internal node = Internal::at(root);
+            const Version version = NodeLatch::of(node.page).read_version();
+            if (!(tree.load_root() == root)) {
+                return;
+            }
+            if (Tree::place_against_root(root, query) != DescentOutcome::inside) {
+                if (NodeLatch::of(node.page).is_unchanged(version)) {
+                    lane.state = LaneState::done;
+                }
+                return;
+            }
+            lane.node = node.page;
+            lane.version = version;
+            lane.state = LaneState::route;
+            return;
+        }
+        case LaneState::route: {
+            const Internal node = Internal{lane.node};
+            Routed routed{0, 0, false};
+            if (!Tree::route_racing(node, lane.version, query, &routed)) {
+                restart(lane);
+                return;
+            }
+            lane.at_separator = lane.at_separator || routed.at_separator;
+            lane.index = routed.edge;
+            Prefetcher::hint(node.edges() + routed.edge);
+            lane.state = LaneState::follow;
+            return;
+        }
+        case LaneState::follow: {
+            const Internal node = Internal{lane.node};
+            const NodePointer child = node.edge(lane.index);
+            if (child.is_null()) {
+                restart(lane);
+                return;
+            }
+            if (lane.at_root && !NodeLatch::of(node.page).is_unchanged(lane.version)) {
+                restart(lane);
+                return;
+            }
+            lane.at_root = false;
+            lane.pending = child.page();
+            Prefetcher::hint(child.page());
+            lane.state = child.is_leaf() ? LaneState::leaf : LaneState::child;
+            return;
+        }
+        case LaneState::child: {
+            const Version child_version = NodeLatch::of(lane.pending).read_version();
+            if (!NodeLatch::of(lane.node).is_unchanged(lane.version)) {
+                restart(lane);
+                return;
+            }
+            lane.node = lane.pending;
+            lane.version = child_version;
+            lane.state = LaneState::route;
+            return;
+        }
+        case LaneState::leaf: {
+            const Version leaf_version = NodeLatch::of(lane.pending).read_version();
+            if (!NodeLatch::of(lane.node).is_unchanged(lane.version)) {
+                restart(lane);
+                return;
+            }
+            // A hint for the entry the insertion will shift, as its inline
+            // keys place it (bbtree racing_insertion_line); no yield.
+            const Leaf leaf = Leaf{lane.pending};
+            const std::size_t racing_length = leaf.length();
+            const std::size_t length = racing_length < Leaf::capacity ? racing_length : Leaf::capacity;
+            const InlineWord word = Shape::window_word(query, leaf.prefix_length());
+            const EqualRange range = Leaf::Count::equal_range(leaf.inline_keys(), Leaf::slot_of(word), length);
+            if (range.begin < length) {
+                Prefetcher::hint(leaf.entry(range.begin + 1));
+            }
+            destination = LeafDestination{
+                .valid = true, .leaf = lane.pending, .version = leaf_version, .at_separator = lane.at_separator};
+            lane.state = LaneState::done;
+            return;
+        }
+        case LaneState::candidate:
         case LaneState::done:
             break;
         }

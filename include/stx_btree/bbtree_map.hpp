@@ -104,6 +104,24 @@ public:
         return tree.insert(std::move(key), std::move(value), policy);
     }
 
+    // Inserts `Count` entries in input order, as `insert` would one by one:
+    // each key's lane finds its leaf first, overlapping their waits for
+    // memory, then each insert takes its leaf by compare-and-swap at the
+    // version its lane read; a leaf another thread changed, or a full one,
+    // sends that entry through a single insert (D55).
+    template <std::size_t Count>
+    std::array<std::optional<Value>, Count> insert_many(std::array<Entry, Count> entries) {
+        std::array<std::optional<std::optional<Value>>, Count> outputs{};
+        ReplaceValue policy;
+        detail::LatchedBatch<Shape, Allocator>::template insert_many<Entry, Count>(tree, entries.data(), outputs.data(), policy);
+        std::array<std::optional<Value>, Count> results{};
+        std::size_t index = 0;
+        for (index = 0; index < Count; index += 1) {
+            results[index] = std::move(*outputs[index]);
+        }
+        return results;
+    }
+
     // Inserts unless an equal key is present; returns whether it did.
     bool try_insert(Key key, Value value) {
         KeepPresent policy;

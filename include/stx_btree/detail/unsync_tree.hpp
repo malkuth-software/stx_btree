@@ -3,6 +3,7 @@
 // The single-threaded tree (bbtree tree/root.rs, search.rs, insert.rs and the
 // unsync map's tree operations). It owns its pages through its allocator.
 
+#include "stx_btree/detail/batch.hpp"
 #include "stx_btree/detail/node.hpp"
 #include "stx_btree/detail/node_stack.hpp"
 #include "stx_btree/detail/root_page.hpp"
@@ -12,6 +13,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <utility>
 
 namespace stx_btree::detail {
@@ -235,6 +237,96 @@ public:
         remember_if_last(stack);
         const Leaf leaf = stack.leaf();
         return InsertOutcome{.inserted = true, .value = &leaf.value(stack.index())};
+    }
+
+    // Inserts, or replaces an equal key's value and returns the old one.
+    std::optional<Value> insert_replacing(Key&& key, Value&& value) {
+        Value replacement = std::move(value);
+        InsertOutcome outcome = insert(std::move(key), std::move(replacement));
+        if (outcome.inserted) {
+            return std::nullopt;
+        }
+        std::optional<Value> old(std::move(*outcome.value));
+        *outcome.value = std::move(replacement);
+        return old;
+    }
+
+    // Inserts `Count` entries (anything with .key and .value), replacing
+    // equal keys' values, with the same result, node for node, as inserting
+    // them in order (D53). Each key's lane finds its destination read-only
+    // first; then entries apply in input order: a destination whose leaf an
+    // earlier entry changed is searched again, a split drops that leaf's
+    // destinations and every separator's, and an insertion from the root
+    // drops them all.
+    template <typename EntryType, std::size_t Count>
+    void insert_many(EntryType* entries, std::optional<Value>* results) {
+        using Batch = UnsyncBatch<Shape>;
+        std::size_t index = 0;
+        if (Count < 2 || root_pointer.is_null() || root_pointer.is_leaf() || !BatchCutoff<Shape>::batches(entry_count)) {
+            for (index = 0; index < Count; index += 1) {
+                results[index] = insert_replacing(std::move(entries[index].key), std::move(entries[index].value));
+            }
+            return;
+        }
+        if (!rightmost_leaf.is_null()) {
+            const Leaf leaf = Leaf::at(rightmost_leaf);
+            const Query first_query = Traits::query_of(entries[0].key);
+            if (appends_to(leaf, first_query)) {
+                // Ascending keys mostly append: the rest go one by one.
+                for (index = 0; index < Count; index += 1) {
+                    results[index] = insert_replacing(std::move(entries[index].key), std::move(entries[index].value));
+                }
+                return;
+            }
+        }
+        rightmost_leaf = NodePointer{};
+        Query queries[Count];
+        typename Batch::Destination destinations[Count];
+        for (index = 0; index < Count; index += 1) {
+            queries[index] = Traits::query_of(entries[index].key);
+        }
+        Batch::find_destinations(root_pointer, queries, destinations, Count);
+        bool descents_valid = true;
+        for (index = 0; index < Count; index += 1) {
+            const typename Batch::Destination destination = destinations[index];
+            if (!descents_valid || destination.kind == Batch::DestinationKind::from_root) {
+                descents_valid = false;
+                results[index] = insert_replacing(std::move(entries[index].key), std::move(entries[index].value));
+                continue;
+            }
+            const Query query = Traits::query_of(entries[index].key);
+            if (destination.kind == Batch::DestinationKind::separator) {
+                const Leaf head_leaf = Internal{destination.node}.head_leaf(destination.index);
+                results[index].emplace(std::move(head_leaf.head_value()));
+                head_leaf.head_value() = std::move(entries[index].value);
+                continue;
+            }
+            const Leaf leaf = Leaf{destination.node};
+            typename Leaf::SearchResult found{.found = destination.found, .index = destination.index};
+            if (leaf.length() != destination.searched_length) {
+                found = leaf.search(query);
+            }
+            if (found.found) {
+                results[index].emplace(std::move(leaf.value(found.index)));
+                leaf.value(found.index) = std::move(entries[index].value);
+                continue;
+            }
+            if (leaf.length() < Leaf::capacity) {
+                const InlineWord word = Shape::window_word(query, leaf.prefix_length());
+                leaf.insert_fit(found.index, std::move(entries[index].key), std::move(entries[index].value), word);
+                entry_count += 1;
+                results[index] = std::nullopt;
+                continue;
+            }
+            results[index] = insert_replacing(std::move(entries[index].key), std::move(entries[index].value));
+            std::size_t later = 0;
+            for (later = index + 1; later < Count; later += 1) {
+                const bool same_leaf = destinations[later].kind == Batch::DestinationKind::leaf && destinations[later].node == leaf.page;
+                if (same_leaf || destinations[later].kind == Batch::DestinationKind::separator) {
+                    destinations[later].kind = Batch::DestinationKind::from_root;
+                }
+            }
+        }
     }
 
     // --- Removal -----------------------------------------------------------

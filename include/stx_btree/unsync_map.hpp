@@ -133,14 +133,16 @@ public:
     // value; the key already present stays (as bbtree's and Rust std's
     // `insert`).
     std::optional<Value> insert(Key key, Value value) {
-        Value replacement = std::move(value);
-        typename Tree::InsertOutcome outcome = tree.insert(std::move(key), std::move(replacement));
-        if (outcome.inserted) {
-            return std::nullopt;
-        }
-        std::optional<Value> old = std::move(*outcome.value);
-        *outcome.value = std::move(replacement);
-        return old;
+        return tree.insert_replacing(std::move(key), std::move(value));
+    }
+
+    // Inserts `Count` entries as `insert` would one by one, with the same
+    // results and the same tree, their descents overlapped in lanes (D53).
+    template <std::size_t Count>
+    std::array<std::optional<Value>, Count> insert_many(std::array<Entry, Count> entries) {
+        std::array<std::optional<Value>, Count> results{};
+        tree.template insert_many<Entry, Count>(entries.data(), results.data());
+        return results;
     }
 
     // Inserts unless an equal key is present; returns whether it inserted.

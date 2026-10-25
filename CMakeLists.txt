@@ -44,6 +44,10 @@ if(STX_BTREE_BUILD_TESTS)
     target_include_directories(stx_btree_shared_map_test PRIVATE tests)
     stx_btree_program(stx_btree_shared_map_test)
     add_test(NAME stx_btree_shared_map_test COMMAND stx_btree_shared_map_test)
+    add_executable(stx_btree_stress_test tests/stress_test.cpp)
+    target_include_directories(stx_btree_stress_test PRIVATE tests)
+    stx_btree_program(stx_btree_stress_test)
+    add_test(NAME stx_btree_stress_test COMMAND stx_btree_stress_test 2)
 endif()
 
 if(STX_BTREE_BUILD_BENCHMARKS)
@@ -53,7 +57,7 @@ endif()
 
 install(TARGETS stx_btree EXPORT stx_btreeTargets)
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(FILES LICENSE-MIT LICENSE-APACHE NOTICE PROVENANCE.md
+install(FILES LICENSE NOTICE PROVENANCE.md
     DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/stx_btree)
 install(EXPORT stx_btreeTargets NAMESPACE stx_btree:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/stx_btree)
 configure_package_config_file(cmake/stx_btreeConfig.cmake.in

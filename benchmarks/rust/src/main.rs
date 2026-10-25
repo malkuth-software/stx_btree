@@ -155,6 +155,17 @@ fn run_unsync<F: KeyFamily>(size: u64, operations: u64) {
     }
     report(&label, "get_miss", operations, start.elapsed().as_nanos(), checksum);
 
+    let batched = operations - operations % BATCH as u64;
+    let mut checksum = 0u64;
+    let start = Instant::now();
+    for chunk in hits[..batched as usize].chunks_exact(BATCH) {
+        let queries: [&F::Query; BATCH] = core::array::from_fn(|lane| chunk[lane].borrow());
+        for value in map.get_many(black_box(queries)) {
+            checksum = checksum.wrapping_add(value.copied().unwrap_or(0));
+        }
+    }
+    report(&label, "get_hit_batched", batched, start.elapsed().as_nanos(), checksum);
+
     let scans = operations / 16;
     let mut checksum = 0u64;
     let start = Instant::now();
@@ -190,6 +201,16 @@ fn run_unsync<F: KeyFamily>(size: u64, operations: u64) {
         sequential.insert(key, index as u64);
     }
     report(&label, "insert_sequential", size, start.elapsed().as_nanos(), sequential.len() as u64);
+
+    let whole = size - size % 16;
+    let mut batched_map = bbtree::unsync::BBTreeMap::<F::Key, u64>::new();
+    let start = Instant::now();
+    for chunk in keys[..whole as usize].chunks_exact(16).enumerate() {
+        let (round, chunk) = chunk;
+        let entries: [(F::Key, u64); 16] = core::array::from_fn(|lane| (chunk[lane].clone(), (round * 16 + lane) as u64));
+        black_box(batched_map.insert_many(entries));
+    }
+    report(&label, "insert_random_batched", whole, start.elapsed().as_nanos(), batched_map.len() as u64);
 }
 
 
@@ -274,6 +295,16 @@ fn run_shared<F: KeyFamily>(size: u64, operations: u64) {
         let _ = sequential.insert(key, index as u64);
     }
     report(&label, "insert_sequential", size, start.elapsed().as_nanos(), size);
+
+    let whole = size - size % 16;
+    let batched_map = bbtree::BBTreeMap::<F::Key, u64>::new();
+    let start = Instant::now();
+    for chunk in keys[..whole as usize].chunks_exact(16).enumerate() {
+        let (round, chunk) = chunk;
+        let entries: [(F::Key, u64); 16] = core::array::from_fn(|lane| (chunk[lane].clone(), (round * 16 + lane) as u64));
+        let _ = black_box(batched_map.insert_many(entries));
+    }
+    report(&label, "insert_random_batched", whole, start.elapsed().as_nanos(), whole);
 }
 
 #[derive(Clone, Copy, PartialEq)]

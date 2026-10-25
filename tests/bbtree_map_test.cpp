@@ -523,6 +523,13 @@ struct PrefixShrinker final {
     }
 };
 
+struct CountU64 final {
+    std::size_t* total = nullptr;
+    void operator()(const std::uint64_t&, std::uint64_t&) const noexcept {
+        *total += 1;
+    }
+};
+
 struct CountEntries final {
     std::size_t* total = nullptr;
     void operator()(const std::string&, std::uint64_t&) const noexcept {
@@ -565,6 +572,119 @@ void string_prefixes_under_appends() {
     std::printf("%-26s ok (%zu entries)\n", "string prefixes", total);
 }
 
+// Batched inserts against inserts one at a time, single-threaded, past the
+// three-level batch threshold; then threads batching their own keys while
+// others look them up.
+template <typename Key>
+void shared_insert_many(const char* label, std::uint64_t seed, bool base_shares_prefix) {
+    using Map = stx_btree::BBTreeMap<Key, std::uint64_t>;
+    Map map;
+    std::map<Key, std::uint64_t> reference;
+    SplitMix64 random(seed);
+    KeyMaker<Key> keys(seed);
+    std::uint64_t index = 0;
+    for (index = 0; index < 150000; index += 1) {
+        const Key key = base_shares_prefix ? keys.make_ordered(index) : keys.make(index);
+        map.insert(key, index);
+        reference[key] = index;
+    }
+    std::size_t round = 0;
+    for (round = 0; round < 3000; round += 1) {
+        std::array<typename Map::Entry, 16> entries{};
+        std::size_t lane = 0;
+        const bool ascending = round % 50 == 0;
+        for (lane = 0; lane < 16; lane += 1) {
+            const std::uint64_t pick = ascending ? 2000000 + round * 16 + lane : random.below(220000);
+            const std::uint64_t key_index = (lane == 9 && !ascending) ? entries[3].value : pick;
+            entries[lane].key = ascending ? keys.make_ordered(pick) : keys.make(key_index);
+            entries[lane].value = key_index;
+        }
+        std::array<typename Map::Entry, 16> copies = entries;
+        const std::array<std::optional<std::uint64_t>, 16> results = map.insert_many(std::move(entries));
+        for (lane = 0; lane < 16; lane += 1) {
+            const typename std::map<Key, std::uint64_t>::iterator found = reference.find(copies[lane].key);
+            if (found == reference.end()) {
+                TestFailure::expect(!results[lane].has_value(), label, "a batched new key returns nothing");
+                reference.emplace(copies[lane].key, copies[lane].value);
+            } else {
+                TestFailure::expect(results[lane].has_value() && *results[lane] == (*found).second, label, "a batched replacement");
+                (*found).second = copies[lane].value;
+            }
+        }
+        if (round % 1000 == 0) {
+            check_structure(map, reference.size(), label);
+        }
+    }
+    check_structure(map, reference.size(), label);
+    std::size_t visited = 0;
+    typename std::map<Key, std::uint64_t>::iterator expected = reference.begin();
+    VisitAll<Key> visit_all{&expected, &visited, label};
+    map.for_each_mut(visit_all);
+    TestFailure::expect(visited == reference.size(), label, "every batched entry is there");
+    std::printf("%-26s ok\n", label);
+}
+
+struct BatchWriter final {
+    U64Map* map = nullptr;
+    std::uint64_t thread_index = 0;
+    std::uint64_t batches = 0;
+    std::uint64_t threads = 0;
+    std::atomic<std::uint64_t>* progress = nullptr;
+    void operator()() const {
+        std::uint64_t round = 0;
+        for (round = 0; round < batches; round += 1) {
+            std::array<U64Map::Entry, 16> entries{};
+            std::size_t lane = 0;
+            for (lane = 0; lane < 16; lane += 1) {
+                const std::uint64_t step = round * 16 + lane;
+                const std::uint64_t key = SplitMix64::mix(step * threads + thread_index);
+                entries[lane].key = key;
+                entries[lane].value = KeyedValue::of(key);
+            }
+            (*map).insert_many(std::move(entries));
+            progress[thread_index].store((round + 1) * 16, std::memory_order_release);
+        }
+    }
+};
+
+void batch_writers_and_readers() {
+    const std::uint64_t writers = 4;
+    U64Map map;
+    std::uint64_t seed_key = 0;
+    for (seed_key = 0; seed_key < 120000; seed_key += 1) {
+        const std::uint64_t key = SplitMix64::mix(seed_key) | 1;
+        map.insert(key, KeyedValue::of(key));
+    }
+    std::atomic<std::uint64_t> progress[4];
+    std::size_t index = 0;
+    for (index = 0; index < writers; index += 1) {
+        progress[index].store(0, std::memory_order_relaxed);
+    }
+    std::atomic<bool> stop{false};
+    std::vector<std::thread> readers;
+    for (index = 0; index < 4; index += 1) {
+        readers.emplace_back(ProgressReader{&map, writers, progress, &stop, 300 + index});
+    }
+    std::vector<std::thread> writing;
+    for (index = 0; index < writers; index += 1) {
+        writing.emplace_back(BatchWriter{&map, index, 6000, writers, progress});
+    }
+    for (index = 0; index < writing.size(); index += 1) {
+        writing[index].join();
+    }
+    stop.store(true, std::memory_order_release);
+    for (index = 0; index < readers.size(); index += 1) {
+        readers[index].join();
+    }
+    std::size_t total = 0;
+    std::uint64_t sum = 0;
+    map.for_each_mut(SumValues{&sum});
+    CountU64 counter{&total};
+    map.for_each_mut(counter);
+    check_structure(map, total, "batch writers and readers");
+    std::printf("%-26s ok (%zu entries)\n", "batch writers and readers", total);
+}
+
 } // namespace
 
 int main() {
@@ -578,6 +698,11 @@ int main() {
     counters();
     scans_under_change();
     string_prefixes_under_appends();
+    shared_insert_many<std::uint64_t>("shared batches u64", 41, false);
+    shared_insert_many<std::string>("shared batches string", 42, false);
+    shared_insert_many<std::uint64_t>("shared batches, prefix", 43, true);
+    shared_insert_many<std::string>("shared batches, str prefix", 44, true);
+    batch_writers_and_readers();
     std::printf("shared map tests passed\n");
     return 0;
 }

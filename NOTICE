@@ -1,0 +1,18 @@
+stx_btree
+Copyright (c) 2026 Joshuah Rainstar
+
+This product is a C++ form of bbtree, "the blessed B-tree", by
+Xiangpeng Hao: https://github.com/XiangpengHao/bbtree
+Copyright (c) 2026 Xiangpeng Hao
+bbtree is licensed under MIT OR Apache-2.0; stx_btree is offered under the
+same terms (see LICENSE).
+
+stx_btree is a derivative work: its data structures, node layouts,
+algorithms, concurrency protocol and many of their comments are translated
+from bbtree's Rust source at commit 8adae97a0ed97e5c98fa2790312eb0aec9719846
+and from its design documents (design/*.md, decisions D1-D60). Every file
+was rewritten in C++20; the changes made in translation, and what was not
+translated, are listed in PROVENANCE.md and docs/DESIGN.md.
+
+Decision numbers (Dnn) and document names cited in the source refer to
+bbtree's design/03-decisions.md and design/*.md at that commit.

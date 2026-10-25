@@ -48,15 +48,18 @@ enum class DescentOutcome : std::uint8_t {
     after_every_key
 };
 
-// How a descent went through one internal node (bbtree Routed).
+// How a descent went through one internal node (bbtree Routed). This and
+// PathLevel are trivially constructible: a path's 23 levels are written
+// only as a descent passes them, not zeroed when a path is made (bbtree
+// 09-concurrency.md, Scans: a path written whole cost each scan 920 bytes).
 struct Routed final {
-    std::size_t edge = 0;
-    std::size_t length = 0;
-    bool at_separator = false;
+    std::size_t edge;
+    std::size_t length;
+    bool at_separator;
 };
 
 struct PathLevel final {
-    std::byte* node = nullptr;
+    std::byte* node;
     Version version;
     Routed routed;
 };
@@ -151,7 +154,7 @@ public:
         if (holds(page)) {
             return true;
         }
-        Version version;
+        Version version{0};
         if (!NodeLatch::of(page).try_read_version(&version)) {
             return false;
         }
@@ -162,7 +165,7 @@ public:
         if (holds(page)) {
             return true;
         }
-        Version version;
+        Version version{0};
         if (!NodeLatch::of(page).try_lock_exclusive(&version)) {
             return false;
         }
@@ -202,8 +205,10 @@ public:
     }
 
 private:
+    // Trivially constructible: slots past the counts are not written until
+    // taken.
     struct Taken final {
-        std::byte* page = nullptr;
+        std::byte* page;
         Version version;
     };
     Taken internals[internal_capacity];
@@ -290,7 +295,7 @@ public:
         }
 
         Leaf leaf;
-        Version version;
+        Version version{0};
         LatchMode mode = LatchMode::optimistic;
         bool holding = false;
     };
@@ -345,7 +350,7 @@ public:
         }
 
         void release_page(PageKind kind, std::byte* page) noexcept {
-            freed[freed_count] = TakenPage{.page = page, .version = Version{}, .kind = kind};
+            freed[freed_count] = TakenPage{.page = page, .version = Version{0}, .kind = kind};
             freed_count += 1;
         }
 
@@ -399,9 +404,9 @@ public:
 
     private:
         struct TakenPage final {
-            std::byte* page = nullptr;
+            std::byte* page;
             Version version;
-            PageKind kind = PageKind::leaf;
+            PageKind kind;
         };
 
         void give_back_reserve() noexcept {
@@ -513,7 +518,10 @@ public:
         if (shared.length == 0) {
             return DescentOutcome::inside;
         }
-        const int order = Traits::compare_shared(query, shared.bytes, shared.length);
+        return order_to_outcome(Traits::compare_shared(query, shared.bytes, shared.length));
+    }
+
+    [[nodiscard]] static DescentOutcome order_to_outcome(int order) noexcept {
         if (order < 0) {
             return DescentOutcome::before_every_key;
         }
@@ -521,6 +529,19 @@ public:
             return DescentOutcome::after_every_key;
         }
         return DescentOutcome::inside;
+    }
+
+    // The same, read from the root page in place: racing a shrink, the
+    // bytes read are vouched for by the root's version afterward, as any
+    // other racing read; under the root leaf's latch they hold still.
+    [[nodiscard]] STX_BTREE_ALWAYS_INLINE static DescentOutcome place_against_root(NodePointer root, const Query& query) noexcept {
+        const Root root_page = Root{root.page()};
+        const std::size_t racing_length = root_page.shared_length();
+        if (racing_length == 0) {
+            return DescentOutcome::inside;
+        }
+        const std::size_t length = racing_length < shared_prefix_capacity ? racing_length : shared_prefix_capacity;
+        return order_to_outcome(Traits::compare_shared(query, root_page.shared_bytes(), length));
     }
 
     // Routes the query through an internal node read racing writers; false
@@ -611,7 +632,7 @@ public:
     // internal nodes are read optimistically and recorded in `path`. Any
     // failed check starts over from the root.
     template <LatchMode Mode, typename Path>
-    [[nodiscard]] DescentOutcome descend(const Query& query, Path& path, HeldLeaf& held, bool* at_separator) const noexcept {
+    [[nodiscard]] STX_BTREE_ALWAYS_INLINE DescentOutcome descend(const Query& query, Path& path, HeldLeaf& held, bool* at_separator) const noexcept {
         while (true) {
             path.clear();
             held.release();
@@ -622,12 +643,10 @@ public:
                 if (!is_root(leaf)) {
                     continue;
                 }
-                SharedPrefixBytes shared;
-                Root{root.page()}.copy_shared_prefix(&shared);
+                const DescentOutcome outcome = place_against_root(root, query);
                 if (Mode == LatchMode::optimistic && !held.is_unchanged()) {
                     continue;
                 }
-                const DescentOutcome outcome = place_against(shared, query);
                 if (outcome != DescentOutcome::inside) {
                     held.release();
                     return outcome;
@@ -640,9 +659,7 @@ public:
             if (!(load_root() == root)) {
                 continue;
             }
-            SharedPrefixBytes shared;
-            Root{root.page()}.copy_shared_prefix(&shared);
-            const DescentOutcome outcome = place_against(shared, query);
+            const DescentOutcome outcome = place_against_root(root, query);
             if (outcome != DescentOutcome::inside) {
                 if (NodeLatch::of(node.page).is_unchanged(version)) {
                     return outcome;
@@ -653,7 +670,7 @@ public:
             bool at_root = true;
             bool restart = false;
             while (true) {
-                Routed routed;
+                Routed routed{0, 0, false};
                 if (!route_racing(node, version, query, &routed)) {
                     restart = true;
                     break;
@@ -1497,9 +1514,7 @@ public:
             // check the shared prefix again under its latch, which on the
             // border holds it (an insert may have shrunk it meanwhile).
             descend_to_end_leaf<Ascending>(path, held);
-            SharedPrefixBytes shared;
-            Root{load_root().page()}.copy_shared_prefix(&shared);
-            if (place_against(shared, *start.key) == outcome) {
+            if (place_against_root(load_root(), *start.key) == outcome) {
                 *cursor = Ascending ? 0 : entry_count(held.leaf);
                 return true;
             }
@@ -1591,26 +1606,26 @@ public:
         if (!turning) {
             return NextLeaf::none;
         }
-        const PathLevel turn = path.levels[level];
-        TreePath next_path;
-        std::size_t copied = 0;
-        for (copied = 0; copied < level; copied += 1) {
-            next_path.levels[copied] = path.levels[copied];
+        // The kept levels below the turning point, checked once the next leaf
+        // is latched: then the held leaf is still the next one's neighbor.
+        // Only the first below_count are written.
+        PathLevel below[maximum_depth];
+        std::size_t below_count = 0;
+        std::size_t kept = 0;
+        for (kept = level + 1; kept < depth; kept += 1) {
+            below[below_count] = path.levels[kept];
+            below_count += 1;
         }
-        next_path.depth = level;
+        const PathLevel turn = path.levels[level];
+        path.depth = level;
         HeldLeaf next;
-        if (!walk_down<Ascending>(Internal{turn.node}, turn.version, true, edge, next_path, next)) {
+        if (!walk_down<Ascending>(Internal{turn.node}, turn.version, true, edge, path, next)) {
             return NextLeaf::start_over;
         }
-        std::size_t below = 0;
-        for (below = level + 1; below < depth; below += 1) {
-            if (!NodeLatch::of(path.levels[below].node).is_unchanged(path.levels[below].version)) {
+        for (kept = 0; kept < below_count; kept += 1) {
+            if (!NodeLatch::of(below[kept].node).is_unchanged(below[kept].version)) {
                 return NextLeaf::start_over;
             }
-        }
-        path.depth = next_path.depth;
-        for (copied = 0; copied < next_path.depth; copied += 1) {
-            path.levels[copied] = next_path.levels[copied];
         }
         held.release();
         move_hold(next, held);
@@ -1640,45 +1655,80 @@ public:
         return inclusive ? order < 0 : order <= 0;
     }
 
+    // Visits a leaf's entries from `cursor` (entry positions, head first).
+    // The keys' addresses come from their indexes alone, so no entry load
+    // waits on the header's head flag (bbtree ScanOrder::whole_entries); the
+    // end bound is decided once per leaf.
     template <bool Ascending, typename Visitor>
     [[nodiscard]] static ScanVisit visit_leaf(Leaf leaf, std::size_t cursor, bool whole, Bound end, Visitor& visitor) {
+        if (end.key == nullptr) {
+            return visit_entries<Ascending, false>(leaf, cursor, whole, end, visitor);
+        }
+        return visit_entries<Ascending, true>(leaf, cursor, whole, end, visitor);
+    }
+
+    template <bool Ascending, bool Bounded, typename Visitor>
+    [[nodiscard]] static ScanVisit visit_entries(Leaf leaf, std::size_t cursor, bool whole, Bound end, Visitor& visitor) {
+        const std::size_t length = leaf.length();
         const bool has_head = leaf.has_head();
-        const std::size_t count = entry_count(leaf);
-        const std::size_t head_slots = has_head ? 1 : 0;
-        (void)whole;
         if (Ascending) {
-            std::size_t position = 0;
-            for (position = cursor; position < count; position += 1) {
-                const bool is_head_entry = has_head && position == 0;
-                const Key& key = is_head_entry ? leaf.head_key() : leaf.key(position - head_slots);
-                const Value& value = is_head_entry ? leaf.head_value() : leaf.value(position - head_slots);
-                if (end.key != nullptr) {
-                    const int order = compare_to_bound(key, end);
-                    if (past_end_order<true>(order, end.inclusive)) {
-                        return ScanVisit::past_end;
-                    }
+            // A whole leaf starts at its head, then key 0.
+            const bool visits_head = has_head && (whole || cursor == 0);
+            std::size_t first_key = 0;
+            if (!whole && cursor > 0) {
+                first_key = cursor - (has_head ? 1 : 0);
+            }
+            if (visits_head) {
+                const ScanVisit visit = visit_entry<Ascending, Bounded>(leaf.head_key(), leaf.head_value(), end, visitor);
+                if (visit != ScanVisit::exhausted) {
+                    return visit;
                 }
-                if (!visitor(key, value)) {
-                    return ScanVisit::stopped;
+            }
+            std::size_t index = 0;
+            for (index = first_key; index < length; index += 1) {
+                const ScanVisit visit = visit_entry<Ascending, Bounded>(leaf.key(index), leaf.value(index), end, visitor);
+                if (visit != ScanVisit::exhausted) {
+                    return visit;
                 }
             }
             return ScanVisit::exhausted;
         }
-        std::size_t position = cursor;
-        while (position > 0) {
-            position -= 1;
-            const bool is_head_entry = has_head && position == 0;
-            const Key& key = is_head_entry ? leaf.head_key() : leaf.key(position - head_slots);
-            const Value& value = is_head_entry ? leaf.head_value() : leaf.value(position - head_slots);
-            if (end.key != nullptr) {
-                const int order = compare_to_bound(key, end);
-                if (past_end_order<false>(order, end.inclusive)) {
-                    return ScanVisit::past_end;
-                }
+        // Descending: keys from the end (or from the cursor) down, then the
+        // head.
+        std::size_t key_end = length;
+        bool visits_head = has_head;
+        if (!whole) {
+            if (has_head) {
+                visits_head = cursor > 0;
+                key_end = cursor > 0 ? cursor - 1 : 0;
+            } else {
+                key_end = cursor;
             }
-            if (!visitor(key, value)) {
-                return ScanVisit::stopped;
+        }
+        std::size_t index = key_end;
+        while (index > 0) {
+            index -= 1;
+            const ScanVisit visit = visit_entry<Ascending, Bounded>(leaf.key(index), leaf.value(index), end, visitor);
+            if (visit != ScanVisit::exhausted) {
+                return visit;
             }
+        }
+        if (visits_head) {
+            return visit_entry<Ascending, Bounded>(leaf.head_key(), leaf.head_value(), end, visitor);
+        }
+        return ScanVisit::exhausted;
+    }
+
+    template <bool Ascending, bool Bounded, typename Visitor>
+    STX_BTREE_ALWAYS_INLINE static ScanVisit visit_entry(const Key& key, const Value& value, Bound end, Visitor& visitor) {
+        if constexpr (Bounded) {
+            const int order = compare_to_bound(key, end);
+            if (past_end_order<Ascending>(order, end.inclusive)) {
+                return ScanVisit::past_end;
+            }
+        }
+        if (!visitor(key, value)) {
+            return ScanVisit::stopped;
         }
         return ScanVisit::exhausted;
     }

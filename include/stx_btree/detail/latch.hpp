@@ -20,8 +20,10 @@
 
 namespace stx_btree::detail {
 
+// Trivially constructible, so that arrays of held versions are not zeroed
+// on every operation; every use site initializes its own.
 struct Version final {
-    std::uint64_t word = 0;
+    std::uint64_t word;
 
     [[nodiscard]] bool operator==(const Version& other) const noexcept {
         return word == other.word;
@@ -142,7 +144,7 @@ public:
     }
 
     [[nodiscard]] Version lock_exclusive() const noexcept {
-        Version version;
+        Version version{0};
         if (try_lock_exclusive(&version)) {
             return version;
         }
@@ -153,7 +155,7 @@ public:
         Backoff backoff;
         while (true) {
             backoff.spin();
-            Version version;
+            Version version{0};
             if (try_lock_exclusive(&version)) {
                 return version;
             }
