@@ -12,7 +12,7 @@ mkdir -p "$out"
 # The toolchains and build trees go however the job ends: the pod's disk is
 # 5 GB, temporary and shared.
 remove_scratch() {
-    rm -rf "$job/toolchain" "$job/clang" "$job/clang-debs" "$job/stx_btree/.build" "$job/stx_btree/benchmarks/rust/vendor"
+    rm -rf "$job/stx_btree_lane_loop" "$job/toolchain" "$job/clang" "$job/clang-debs" "$job/stx_btree/.build" "$job/stx_btree/benchmarks/rust/vendor"
 }
 trap remove_scratch EXIT
 export RUSTUP_HOME="$job/toolchain/rustup"
@@ -23,8 +23,7 @@ echo "== toolchains"
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o rustup-init.sh
 sh rustup-init.sh -y --profile minimal --default-toolchain stable --no-modify-path
 mkdir -p "$job/clang-debs" "$job/clang"
-(cd "$job/clang-debs" && apt-get download clang-18 libclang-cpp18 libllvm18 libclang-common-18-dev llvm-18-linker-tools libclang1-18 \
-    libc++-18-dev libc++1-18 libc++abi-18-dev libc++abi1-18 libunwind-18 libunwind-18-dev)
+(cd "$job/clang-debs" && apt-get download clang-18 libclang-cpp18 libllvm18 libclang-common-18-dev llvm-18-linker-tools libclang1-18)
 for deb in "$job"/clang-debs/*.deb; do dpkg -x "$deb" "$job/clang"; done
 export LD_LIBRARY_PATH="$job/clang/usr/lib/x86_64-linux-gnu:$job/clang/usr/lib/llvm-18/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 clang="$job/clang/usr/lib/llvm-18/bin/clang++"
@@ -51,28 +50,32 @@ for compiler in g++ "$clang"; do
     "$compiler" -std=c++20 -O3 -DNDEBUG -march=native -Iinclude -S -o "$out/count_probe.$name.s" benchmarks/pod/count_probe.cpp
     "$compiler" -std=c++20 -O3 -DNDEBUG -march=native -Iinclude -S -o "$out/find_probe.$name.s" benchmarks/pod/find_probe.cpp
 done
-libcxx_flags="-stdlib=libc++ -nostdinc++ -isystem $job/clang/usr/lib/llvm-18/include/c++/v1 -isystem $job/clang/usr/include/c++/v1"
-libcxx_link="-stdlib=libc++ -L$job/clang/usr/lib/llvm-18/lib -L$job/clang/usr/lib/x86_64-linux-gnu -Wl,-rpath,$job/clang/usr/lib/llvm-18/lib"
 
 echo "== stx_btree benches"
-# One bench per build: compiler, flags, standard library.
+# One bench per build: compiler, flags and source tree. The lane_loop tree
+# is this tree with the count from before the shuffle reduction
+# (benchmarks/pod/overlay_lane_loop), for an A/B in one job.
+lane_loop_tree="$job/stx_btree_lane_loop"
+mkdir -p "$lane_loop_tree"
+tar -C "$job/stx_btree" --exclude=./.build --exclude=./benchmarks/rust -cf - . | tar -C "$lane_loop_tree" -xf -
+cp benchmarks/pod/overlay_lane_loop/stx_btree/detail/vector_count.hpp "$lane_loop_tree/include/stx_btree/detail/vector_count.hpp"
 build_bench() {
-    local name="$1" compiler="$2" flags="$3" link="$4"
-    cmake -S . -B ".build/$name" -DCMAKE_BUILD_TYPE=Release "-DCMAKE_CXX_COMPILER=$compiler" "-DCMAKE_CXX_FLAGS=$flags" \
-        "-DCMAKE_EXE_LINKER_FLAGS=$link" -DSTX_BTREE_WARNINGS_AS_ERRORS=OFF -DSTX_BTREE_BUILD_TESTS=OFF > /dev/null
+    local name="$1" compiler="$2" flags="$3" tree="$4"
+    cmake -S "$tree" -B ".build/$name" -DCMAKE_BUILD_TYPE=Release "-DCMAKE_CXX_COMPILER=$compiler" "-DCMAKE_CXX_FLAGS=$flags" \
+        -DSTX_BTREE_WARNINGS_AS_ERRORS=OFF -DSTX_BTREE_BUILD_TESTS=OFF > /dev/null
     if ! cmake --build ".build/$name" --parallel 4 --target stx_btree_bench > "$out/build-$name.log" 2>&1; then
         echo "$name: build failed (results/build-$name.log)"
         grep -m 5 "error" "$out/build-$name.log" || true
         return 0
     fi
+    echo "$name: $(objdump -d ".build/$name/stx_btree_bench" | grep -c vpextrw) vpextrw in the binary" >> "$out/toolchains.txt"
     built="$built $name"
 }
 built=""
-build_bench gcc g++ "-march=native" ""
-build_bench gcc_v3 g++ "-march=x86-64-v3" ""
-build_bench gcc_generic g++ "-march=native -mtune=generic" ""
-build_bench clang "$clang" "-march=native" ""
-build_bench clang_libcxx "$clang" "-march=native $libcxx_flags" "$libcxx_link"
+build_bench gcc g++ "-march=native" "$job/stx_btree"
+build_bench gcc_lane_loop g++ "-march=native" "$lane_loop_tree"
+build_bench clang "$clang" "-march=native" "$job/stx_btree"
+build_bench clang_lane_loop "$clang" "-march=native" "$lane_loop_tree"
 runnable=""
 for name in $built; do
     if "./.build/$name/stx_btree_bench" unsync str16 1000 1000 > /dev/null; then

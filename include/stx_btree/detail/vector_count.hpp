@@ -84,15 +84,27 @@ private:
             below -= __builtin_convertvector(lanes < broadcast, Lanes) & keep;
             equal -= __builtin_convertvector(lanes == broadcast, Lanes) & keep;
         }
-        Slot below_total = 0;
-        Slot equal_total = 0;
-        std::size_t lane = 0;
-        for (lane = 0; lane < group_lanes; lane += 1) {
-            below_total = static_cast<Slot>(below_total + below[lane]);
-            equal_total = static_cast<Slot>(equal_total + equal[lane]);
+        *below_out = sum_lanes(below);
+        *equal_out = sum_lanes(equal);
+    }
+
+    // The sum of the lanes by halving: each step adds the upper half of
+    // what remains onto the lower half. Written as shuffles because GCC 13
+    // turned the plain lane loop into one extract and one add per lane on
+    // x86-64 (16 extracts per node for two-byte slots).
+    [[nodiscard]] STX_BTREE_ALWAYS_INLINE static Slot sum_lanes(Lanes lanes) noexcept {
+        if constexpr (group_lanes == 8) {
+            lanes += __builtin_shufflevector(lanes, lanes, 4, 5, 6, 7, 0, 1, 2, 3);
+            lanes += __builtin_shufflevector(lanes, lanes, 2, 3, 0, 1, 2, 3, 0, 1);
+            lanes += __builtin_shufflevector(lanes, lanes, 1, 0, 1, 0, 1, 0, 1, 0);
+        } else if constexpr (group_lanes == 4) {
+            lanes += __builtin_shufflevector(lanes, lanes, 2, 3, 0, 1);
+            lanes += __builtin_shufflevector(lanes, lanes, 1, 0, 1, 0);
+        } else {
+            static_assert(group_lanes == 2, "a lane group holds 2, 4 or 8 slots");
+            lanes += __builtin_shufflevector(lanes, lanes, 1, 0);
         }
-        *below_out = below_total;
-        *equal_out = equal_total;
+        return lanes[0];
     }
 #else
     static void count(const Slot* slots, Slot target, std::size_t* below_out, std::size_t* equal_out) noexcept {
