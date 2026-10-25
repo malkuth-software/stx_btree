@@ -37,7 +37,7 @@ for build in cpp rust; do
     fi
     valgrind --tool=callgrind --cache-sim=yes --callgrind-out-file="$out/callgrind.$build.out" \
         "$program" unsync u64 1000000 200000 > "$out/run-$build.csv" 2> "$out/valgrind-$build.log"
-    callgrind_annotate --inclusive=yes "$out/callgrind.$build.out" 2>/dev/null | head -80 > "$out/inclusive-$build.txt"
-    callgrind_annotate "$out/callgrind.$build.out" 2>/dev/null | head -60 > "$out/self-$build.txt"
+    callgrind_annotate --inclusive=yes "$out/callgrind.$build.out" > "$out/inclusive-$build.txt" 2>&1 || true
+    callgrind_annotate "$out/callgrind.$build.out" > "$out/self-$build.txt" 2>&1 || true
 done
 echo "done"
