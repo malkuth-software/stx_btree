@@ -148,9 +148,44 @@ What that separates:
   explains the M4 lead, not yet the Linux lag. A libc++ build on the pod would
   separate the library, but libc++ 18 lacks `std::atomic_ref`.
 - **Writes are behind with either compiler** (inserts and removes 1.4–1.7×);
-  not yet diagnosed.
+  see the next section.
 - Clang 18 on Linux found a portability defect, now fixed: the sized aligned
   `operator delete` is not declared there by default.
+
+### Writes, 2026-10-25
+
+On the M4 inserts and removes are at parity (unsync u64 10M: 1.01 and
+0.96); on the pod they are 1.5–1.8× with Clang as with GCC, beyond the
+lookup gap. Four probes (`results/2026-10-25-pod-x86-writes/`):
+
+- **Page placement matters, and both pay for it.** With a pooled arena page
+  allocator (`benchmarks/pod/arena_page_allocator.hpp`, bench-only, built in
+  by `-DSTX_BTREE_BENCH_ARENA`), the Clang build at 1M runs inserts at 0.94×
+  bbtree's time (1.33× with the default allocator), removes at 0.86× (1.35×),
+  lookups at 0.77× (1.27×) and range reads at 0.48× (1.01×). At 10M it helps
+  less: inserts 1.46× (1.56×), removes 1.66× (1.78×). The pod's transparent
+  huge pages are madvise-only and unused, so this is 4 KiB-page placement.
+- **The two programs make the same allocations.** An `LD_PRELOAD` census
+  (`benchmarks/pod/alloc_census.c`) counts identical calls for both: 744 407
+  `posix_memalign(1024, 1024)` and 21 791 `posix_memalign(512, 512)` at 10M,
+  and the same address spread (1.55 GB for 0.76 GB of pages: glibc's aligned
+  path leaves gaps for both). Placement does not separate them; the arena
+  removes a cost bbtree pays too.
+- **They do the same work.** Callgrind with cache and branch simulation
+  (x86-64-v3 builds, since valgrind 3.22 cannot run AVX-512; unsync u64 1M,
+  200 000 operations) counts 2.10 G instructions for C++ against 2.21 G for
+  bbtree, 30.3 M against 30.6 M simulated L1 read misses, 1.74 M against 1.67 M
+  last-level write misses, and fewer mispredicted branches (5.9 M against
+  6.6 M).
+- **Hardware counters are not available:** the pod's kernel refuses `perf`
+  (`perf_event_paranoid` 4; "No permission to enable cycles event").
+
+So by every count available there, the C++ write path does no more work
+than bbtree's, yet runs slower on this Zen 5 slice; what separates them is a
+hardware effect the simulators do not model (memory-level parallelism, store
+forwarding in the shifts, or similar), and it needs hardware counters on a
+machine that allows them. Independently, a pooled page allocator is a
+measured gain on Linux for both lookups and writes.
 
 ## Reproduce on the Mac mini
 

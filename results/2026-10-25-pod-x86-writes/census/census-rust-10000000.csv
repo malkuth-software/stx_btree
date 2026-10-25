@@ -1,0 +1,6 @@
+function,size,alignment,calls
+posix_memalign,1024,1024,744407
+posix_memalign,512,512,21791
+frees,766219
+aligned_span_bytes,1546863616
+aligned_page_changes,377653

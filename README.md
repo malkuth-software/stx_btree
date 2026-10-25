@@ -115,7 +115,9 @@ gap is partly diagnosed: most of the integer lookup gap is GCC's code on
 x86-64 (Clang 18 builds run u64 lookups at 1.1–1.3× bbtree's time, and a fix
 in the node count took GCC's unsync u64 lookups from 1.8× to 1.4×); string
 lookups (1.7–1.9×) and writes (1.4–1.7×) are behind with either compiler and
-still open.
+still open. For writes, deterministic counts show the C++ form doing no more
+work than bbtree, and a pooled page allocator makes it faster than bbtree at
+1M entries on that host.
 
 ## Optimal search trees
 
