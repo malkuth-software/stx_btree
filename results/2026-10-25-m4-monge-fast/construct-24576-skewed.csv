@@ -1,0 +1,14 @@
+construct,knuth,24576,zipf,4.107,4.107,4.107,
+construct,monge_penalty,24576,zipf,8.146,8.146,8.146,height_bound=36;layers=21;fixed_point=1;largest_core=722068;witness_slots=170842145
+construct,monge_penalty_screened,24576,zipf,8.524,8.524,8.524,height_bound=36;layers=21;fixed_point=1;largest_core=722068;witness_slots=170842145
+construct,monge_additive,24576,zipf,7.465,7.465,7.465,height_bound=36;layers=21;fixed_point=1;largest_core=555946;witness_slots=157991527
+construct,monge_additive_screened,24576,zipf,7.804,7.804,7.804,height_bound=36;layers=21;fixed_point=1;largest_core=555946;witness_slots=157991527
+construct,weight_balanced,24576,zipf,0.001,0.001,0.001,cost_ratio=1.19686
+construct,packing,24576,zipf,0.002,0.002,0.002,
+construct,knuth,24576,random,4.716,4.716,4.716,
+construct,monge_penalty,24576,random,16.136,16.136,16.136,height_bound=38;layers=19;fixed_point=1;largest_core=1767534;witness_slots=334494667
+construct,monge_penalty_screened,24576,random,16.787,16.787,16.787,height_bound=38;layers=19;fixed_point=1;largest_core=1767534;witness_slots=334494667
+construct,monge_additive,24576,random,18.423,18.423,18.423,height_bound=38;layers=19;fixed_point=1;largest_core=1907068;witness_slots=385518799
+construct,monge_additive_screened,24576,random,19.207,19.207,19.207,height_bound=38;layers=19;fixed_point=1;largest_core=1907068;witness_slots=385518799
+construct,weight_balanced,24576,random,0.001,0.001,0.001,cost_ratio=1.01305
+construct,packing,24576,random,0.002,0.002,0.002,

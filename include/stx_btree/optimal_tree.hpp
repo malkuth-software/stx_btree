@@ -252,41 +252,42 @@ public:
             const MatrixIndex at = static_cast<MatrixIndex>(key);
             densities.push_back(Density{.row = at, .column = at, .value = below_diagonal + base_single[key]});
         }
-        CondensedMatrix layer = CondensedMatrix::from_densities(std::move(top_row), std::move(left_column), densities);
+        CondensedMatrix layer = CondensedMatrix::from_densities(std::move(top_row), std::move(left_column), std::move(densities));
         report.largest_core = static_cast<std::size_t>(layer.core_size());
 
-        const std::vector<MatrixIndex> rows_all = CondensedMatrix::index_range(0, n + 1);
-        const std::vector<MatrixIndex> rows_after_first = CondensedMatrix::index_range(1, n + 1);
-        const std::vector<MatrixIndex> columns_before_last = CondensedMatrix::index_range(0, n);
         std::vector<std::unique_ptr<ProductWitness>> witnesses;
+        detail::ProductScratch scratch;
         std::size_t step = 0;
         for (step = 1; step <= height; step += 1) {
             // A_h(i, j) = W(i, j) + min over i <= r < j of A_{h-1}(i, r) + A_{h-1}(r + 1, j).
-            const CondensedMatrix roots_left = layer.select(rows_all, columns_before_last);
-            const CondensedMatrix roots_right = layer.select(rows_after_first, rows_all);
-            MongeProduct product = MongeMultiplier::multiply(roots_left, roots_right, options.screen_roots);
-            densities.clear();
-            std::size_t index = 0;
-            for (index = 0; index < product.matrix.core.size(); index += 1) {
-                const Density& density = product.matrix.core[index];
-                if (density.column >= density.row + 2) {
-                    densities.push_back(density);
-                }
-            }
-            // The diagonal band of the finite completion E_h.
+            const CondensedMatrix roots_left = layer.select_range(0, n + 1, 0, n, scratch);
+            const CondensedMatrix roots_right = layer.select_range(1, n + 1, 0, n + 1, scratch);
+            MongeProduct product = MongeMultiplier::multiply(roots_left, roots_right, options.screen_roots, scratch);
+            // Row by row, in row-major order: the diagonal band of the finite
+            // completion E_h, then the product's densities right of it.
+            densities.clear(); // emptied by the move into the previous layer
+            densities.reserve(product.matrix.core.size() + 2 * key_count);
+            const std::vector<ExactCost>& previous_single = step == 1 ? base_single : single;
             for (key = 0; key < key_count; key += 1) {
                 const MatrixIndex at = static_cast<MatrixIndex>(key);
                 densities.push_back(Density{.row = at, .column = at, .value = below_diagonal + single[key]});
                 if (key + 1 < key_count) {
                     // min(A_{h-1}(i, i + 1), A_{h-1}(i + 1, i + 2)): the
                     // base's singletons at h = 1, the singleton masses after.
-                    const std::vector<ExactCost>& previous_single = step == 1 ? base_single : single;
                     const ExactCost bridge = previous_single[key] < previous_single[key + 1] ? previous_single[key]
                                                                                              : previous_single[key + 1];
                     const ExactCost band = bridge - static_cast<ExactCost>(weights.gaps[key + 1]);
                     assert(band >= 0);
                     if (band != 0) {
                         densities.push_back(Density{.row = at, .column = at + 1, .value = band});
+                    }
+                }
+                std::size_t index = 0;
+                const std::size_t row_end = static_cast<std::size_t>(product.matrix.row_begin[key + 1]);
+                for (index = static_cast<std::size_t>(product.matrix.row_begin[key]); index < row_end; index += 1) {
+                    const Density& density = product.matrix.core[index];
+                    if (density.column >= density.row + 2) {
+                        densities.push_back(density);
                     }
                 }
             }
@@ -298,7 +299,7 @@ public:
             for (key = 0; key <= key_count; key += 1) {
                 left_column[key] = below_diagonal * static_cast<ExactCost>(key);
             }
-            CondensedMatrix next = CondensedMatrix::from_densities(std::move(top_row), std::move(left_column), densities);
+            CondensedMatrix next = CondensedMatrix::from_densities(std::move(top_row), std::move(left_column), std::move(densities));
             report.layers += 1;
             const std::size_t core_count = static_cast<std::size_t>(next.core_size());
             if (core_count > report.largest_core) {

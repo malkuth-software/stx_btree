@@ -148,9 +148,10 @@ static map that packs a weight-optimal tree into nodes searched the bbtree
 way. At 8M keys under Zipf access (s = 1.0–1.2) it answers lookups 1.5–1.6×
 faster than the unsync map on the M4; at 1M keys it does not help. The layer
 construction, with the published base or Codex Sydney's additive revision,
-beats Knuth's O(n²) construction at n = 24 576 for uniform weights on the M4
-(4.93 s against 5.76 s); for skewed and random weights Knuth is still faster
-at the sizes measured.
+beats Knuth's O(n²) construction from n = 16 384 for uniform weights on the M4
+and takes half its time at 24 576 (2.67 s against 5.55 s); for skewed and
+random weights Knuth is still faster at the sizes measured (1.8× and 3.4× at
+24 576), by a ratio that falls with n.
 [Optimal trees](docs/OPTIMAL_TREES.md) has the design, the checks and the
 numbers.
 

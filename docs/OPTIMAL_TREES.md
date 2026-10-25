@@ -87,42 +87,52 @@ is a record at both corners. It costs 1–8% and is off by default.
 
 ### Measured construction time (Apple M4, LLVM 23, median of 3)
 
-`results/2026-10-25-m4-monge-revision/`. Weights: uniform (all p, q = 1),
-zipf (p = 10⁶/(rank + 1) + 1 for a random rank, q = 1), random (p in
-1..1000, q in 0..999). Seconds; cores are the largest layer's density count.
+`results/2026-10-25-m4-monge-fast/` (current), with the earlier run in
+`results/2026-10-25-m4-monge-revision/` as "before". Weights: uniform (all
+p, q = 1), zipf (p = 10⁶/(rank + 1) + 1 for a random rank, q = 1), random
+(p in 1..1000, q in 0..999). Seconds.
 
-| family | n | knuth | penalty base | additive base | core, penalty / additive | layers |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| uniform | 4096 | 0.070 | 0.651 | 0.652 | 45 070 / 45 070 | 14 |
-| uniform | 8192 | 0.341 | 1.620 | 1.627 | 98 319 / 98 319 | 15 |
-| uniform | 16 384 | 1.847 | 3.188 | 3.120 | 213 008 / 213 008 | 16 |
-| uniform | 24 576 | **5.760** | **5.002** | **4.934** | 335 888 / 335 888 | 16 |
-| zipf | 4096 | 0.086 | 1.330 | 1.238 | 97 291 / 74 988 | 17 |
-| zipf | 8192 | 0.371 | 3.341 | 3.031 | 217 337 / 167 832 | 18 |
-| zipf | 16 384 | 1.438 | 8.163 | 7.417 | 465 949 / 355 464 | 20 |
-| random | 4096 | 0.084 | 2.080 | 2.378 | 197 390 / 216 864 | 16 |
-| random | 8192 | 0.377 | 5.566 | 6.385 | 466 830 / 510 149 | 17 |
-| random | 16 384 | 1.711 | 14.798 | 17.037 | 1 083 065 / 1 183 448 | 18 |
+| family | n | knuth | penalty base, before → now | additive base, before → now | now ÷ knuth (penalty / additive) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| uniform | 4096 | 0.080 | 0.651 → 0.301 | 0.652 → 0.300 | 3.76 / 3.75 |
+| uniform | 8192 | 0.355 | 1.620 → 0.751 | 1.627 → 0.747 | 2.12 / 2.10 |
+| uniform | 12 288 | 0.871 | 1.198 | 1.189 | 1.38 / 1.37 |
+| uniform | 16 384 | 1.836 | 3.188 → 1.786 | 3.120 → 1.776 | **0.97 / 0.97** |
+| uniform | 24 576 | 5.550 | 5.002 → 2.723 | 4.934 → 2.669 | **0.49 / 0.48** |
+| zipf | 8192 | 0.393 | 3.341 → 2.021 | 3.031 → 1.874 | 5.14 / 4.77 |
+| zipf | 16 384 | 1.446 | 8.163 → 4.943 | 7.417 → 4.544 | 3.42 / 3.14 |
+| zipf | 24 576 † | 4.107 | 8.146 | 7.465 | 1.98 / 1.82 |
+| random | 8192 | 0.384 | 5.566 → 3.521 | 6.385 → 4.024 | 9.17 / 10.48 |
+| random | 16 384 | 1.600 | 14.798 → 9.082 | 17.037 → 10.463 | 5.68 / 6.54 |
+| random | 24 576 † | 4.716 | 16.136 | 18.423 | 3.42 / 3.91 |
 
-**The layers beat Knuth at n = 24 576 for uniform weights**: 4.93 s (additive,
-range 4.92–5.01) and 5.00 s (penalty, 4.99–5.80) against Knuth's 5.76 s
-(5.66–6.31), three repetitions each. Knuth's time grows 5.4× from 8192 to
-16 384 and 3.1× from 16 384 to 24 576 as its table outgrows the caches; the
-layers grow about 2×. For zipf and random weights Knuth is still 5–9× faster at
-16 384. That is one host, one family crossing; a larger n is limited by the
-Mini's 16 GB (Knuth's table is 10.7 GB at 32 768).
+† one repetition.
+
+**The layers beat Knuth from n = 16 384 for uniform weights** (additive
+1.776 s, range 1.772–1.791, against Knuth's 1.836 s, 1.804–1.857) and run in
+half Knuth's time at 24 576 (2.67 s against 5.55 s). For zipf and random
+weights Knuth is still faster at every size the Mini's 16 GB allows (its table
+is 10.7 GB at 32 768), but the ratio falls with n: zipf 5.1 → 3.1 → 1.8 and
+random 9.2 → 5.7 → 3.4 from 8192 to 24 576. That is one host and one crossing
+family; the trend is not a proof of a crossing for the others.
+
+What made the layers about twice as fast (2.1× uniform, 1.6× zipf and
+random, identical results): densities stay row-major through every
+producer, so building a matrix skips both counting sorts and, when nothing
+repeats, takes the input vector as its core without copying (the staircase
+merge emits each row's left part, staircase run and right part in order; the
+layer step puts each row's diagonal band before the product's densities); a
+column-major index is built only for the two matrices a merge walks, not for
+every matrix; contiguous selections (the split's halves, the layer's two
+operands) read one run of the core and the needed border spans without
+building index vectors or interval maps; and the per-row and per-column
+masses, interval maps and column flags reuse one scratch workspace per
+construction (`detail::ProductScratch`).
 
 On the bases: identical cores and times for uniform weights; the additive base
-cuts zipf cores by about 23% and time by 7–9%; for the random family
+cuts zipf cores by about 23% and time by 8–9%; for the random family
 (W ≈ 1000n, where the 3LW bound says nothing) its cores are 9–10% larger and it
 is 13–15% slower. Every run reached a fixed point before H.
-
-A sampling profile at n = 16 384 (uniform) puts about 30% of the time in
-`CondensedMatrix::from_densities` (two counting sorts and the compressed-row
-rebuild of every intermediate matrix), about 35% in allocation, freeing and
-clearing, 9% in `select`, and about 5% in the staircase merge and dense
-leaves: the remaining gap to Knuth below the crossover is the
-implementation's constant factor per density, not core size.
 
 ## Packing and layout
 
@@ -200,6 +210,6 @@ Reading them:
 - The packing is optimal for the given binary tree, not among multiway
   trees; an exact multiway construction (layers whose step splits an
   interval into up to K + 1 parts) is open.
-- Below the crossover the layers lose to Knuth on constant factors: sorted
-  merges in place of the counting sorts, and reused buffers in place of
-  per-call allocation, are the next step.
+- Below the crossover the layers still lose on constant factors; matrices
+  still allocate their borders, cores and row offsets, and the dense leaves
+  compute whole rows and columns of their operands.
