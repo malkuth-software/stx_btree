@@ -4,8 +4,8 @@ Copyright (c) 2026 Joshuah Rainstar
 This product is a C++ form of bbtree, "the blessed B-tree", by
 Xiangpeng Hao: https://github.com/XiangpengHao/bbtree
 Copyright (c) 2026 Xiangpeng Hao
-bbtree is licensed under MIT OR Apache-2.0; stx_btree is offered under the
-same terms (see LICENSE).
+bbtree is licensed under MIT OR Apache-2.0; stx_btree takes the MIT option
+and is offered under the MIT License (see LICENSE).
 
 stx_btree is a derivative work: its data structures, node layouts,
 algorithms, concurrency protocol and many of their comments are translated
