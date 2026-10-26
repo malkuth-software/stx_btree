@@ -21,7 +21,7 @@ This repository provides the same two maps as a header-only C++ library:
 
 [Design](docs/DESIGN.md) · [Build](docs/BUILDING.md) ·
 [Measurements](docs/MEASUREMENTS.md) · [Provenance](PROVENANCE.md) ·
-[License: MIT OR Apache-2.0](LICENSE)
+[License: MIT](LICENSE)
 
 ## The construction
 
@@ -166,6 +166,6 @@ every difference. The format of memory is not a stable ABI.
 
 bbtree is the work of Xiangpeng Hao, whose design record
 ([design/](https://github.com/XiangpengHao/bbtree/tree/main/design)) explains
-and measures every choice this form inherits. stx_btree is offered under the
-same terms as bbtree: the MIT License or the Apache License 2.0, at your
-option ([LICENSE](LICENSE), [NOTICE](NOTICE)).
+and measures every choice this form inherits. bbtree is licensed under the
+MIT License or the Apache License 2.0; stx_btree takes the MIT option and is
+offered under the MIT License ([LICENSE](LICENSE), [NOTICE](NOTICE)).
